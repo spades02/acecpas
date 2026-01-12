@@ -5,7 +5,6 @@ import React from "react"
 import {
   Breadcrumb,
   BreadcrumbItem,
-  BreadcrumbLink,
   BreadcrumbList,
   BreadcrumbPage,
   BreadcrumbSeparator,
@@ -20,30 +19,26 @@ export function DynamicBreadcrumb() {
   return (
     <Breadcrumb className="hidden md:flex">
       <BreadcrumbList>
-      {/* Always show Home as the first item */}
-      <BreadcrumbItem>
-          <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
-        </BreadcrumbItem>
-        {/* Map over path segments to create breadcrumbs */}
+        
+        {/* 1. Only show "Dashboard" if we are on the homepage (no path segments) */}
+        {pathSegments.length === 0 && (
+          <BreadcrumbItem>
+            {/* Using BreadcrumbPage since it's the current active page */}
+            <BreadcrumbPage>Dashboard</BreadcrumbPage>
+          </BreadcrumbItem>
+        )}
+  
+        {/* 2. Map over path segments for other pages */}
         {pathSegments.map((segment, index) => {
-          const isLast = index === pathSegments.length - 1
-          
-          // Reconstruct the path for this segment
           const href = `/${pathSegments.slice(0, index + 1).join("/")}`
-          
-          // Format the text: replace dashes with spaces and capitalize
           const title = segment.charAt(0).toUpperCase() + segment.slice(1).replace(/-/g, " ")
-
+  
           return (
             <React.Fragment key={href}>
+              {/* Add separator ONLY between dynamic segments (not before the first one) */}
               {index > 0 && <BreadcrumbSeparator />}
-              
               <BreadcrumbItem>
-                {isLast ? (
                   <BreadcrumbPage>{title}</BreadcrumbPage>
-                ) : (
-                  <BreadcrumbLink href={href}>{title}</BreadcrumbLink>
-                )}
               </BreadcrumbItem>
             </React.Fragment>
           )

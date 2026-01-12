@@ -72,7 +72,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSepara
         </SidebarGroup>
 
         {/* Collapsible Deals Group */}
-        <Collapsible className="group/collapsible">
+        <Collapsible defaultOpen className="group/collapsible">
           <SidebarGroup>
             <SidebarGroupLabel asChild>
               <CollapsibleTrigger>

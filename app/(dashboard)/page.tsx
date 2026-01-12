@@ -5,35 +5,17 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Progress } from "@/components/ui/progress";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { AlertTriangle, CheckCircle, Clock, FolderOpen, MoreVertical, TrendingUp } from "lucide-react";
+import { MOCK_DEALS as deals } from "@/data/deals-data"
+import { DealsTable } from "@/components/pages/deals/deals-table";
+import { Suspense } from "react";
+import { DealsSection } from "@/components/pages/deals/deals-section";
+import Link from "next/link";
 
-export default function Home() {
-  const deals = [
-    {
-      id: '1',
-      name: 'Acme Corp Acquisition',
-      client: 'Acme Industries Inc.',
-      status: 'mapping',
-      progress: 67,
-      lastUpdated: '2 hours ago',
-    },
-    {
-      id: '2',
-      name: 'TechStart M&A',
-      client: 'TechStart LLC',
-      status: 'complete',
-      progress: 100,
-      lastUpdated: 'Yesterday',
-    },
-    {
-      id: '3',
-      name: 'RetailCo Due Diligence',
-      client: 'RetailCo Partners',
-      status: 'in-progress',
-      progress: 34,
-      lastUpdated: '3 hours ago',
-    },
-  ];
-
+export default function Home({
+  searchParams,
+}: {
+  searchParams: Promise<any>;
+}) {
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { label: string; className: string }> = {
       'mapping': { label: 'Mapping', className: 'bg-amber-100 text-amber-800 border-amber-200' },
@@ -125,115 +107,20 @@ export default function Home() {
       <div>
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-2xl font-semibold text-foreground">Recent Deals</h2>
+          <Link href={"/deals/create-deal"}>
           <Button 
           // onClick={() => onNavigate('create-deal')}
           >
             + Create New Deal
           </Button>
+          </Link>
         </div>
 
         {/* Deals Table */}
-        <div className="border-2 rounded-sm">
-            <Table className="rounded-t-full">
-              <TableHeader>
-                <TableRow className="bg-muted border-b border-border">
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Deal Name
-                  </TableHead>
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Client Name
-                  </TableHead>
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Status
-                  </TableHead>
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Progress
-                  </TableHead>
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Last Updated
-                  </TableHead>
-                  <TableHead className="text-left text-xs font-semibold text-muted-foreground uppercase tracking-wide px-6 py-3">
-                    Actions
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="divide-y divide-border">
-                {deals.map((deal) => (
-                  <TableRow
-                    key={deal.id} 
-                    className="hover:bg-muted/50 cursor-pointer transition-colors"
-                    // onClick={() => onNavigate('mapper', deal.id)}
-                  >
-                    <TableCell className="px-6 py-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-8 h-8 bg-primary/10 rounded-full flex items-center justify-center">
-                          <FolderOpen className="w-4 h-4 text-primary" />
-                        </div>
-                        <div className="font-medium text-foreground">{deal.name}</div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-6 py-4">
-                      <div className="text-sm text-muted-foreground">{deal.client}</div>
-                    </TableCell>
-                    <TableCell className="px-6 py-4">
-                      {getStatusBadge(deal.status)}
-                    </TableCell>
-                    <TableCell className="px-6 py-4">
-                      <div className="flex items-center gap-3 min-w-[150px]">
-                        <Progress value={deal.progress} className="flex-1" />
-                        <span className="text-sm font-medium text-foreground w-10">{deal.progress}%</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="px-6 py-4">
-                      <div className="text-xs text-muted-foreground">{deal.lastUpdated}</div>
-                    </TableCell>
-                    <TableCell className="px-6 py-4">
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild 
-                        // onClick={(e) => e.stopPropagation()}
-                        >
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="w-4 h-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem 
-                          // onClick={(e) => { e.stopPropagation(); onNavigate('mapper', deal.id); }}
-                          >
-                            Open
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                          // onClick={(e) => { e.stopPropagation(); onNavigate('deal-reports', deal.id); }}
-                          >
-                            View Report
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                          // onClick={(e) => e.stopPropagation()}
-                          >
-                            Archive
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-
-          {/* Pagination */}
-          <div className="border-t border-border px-6 py-4 flex items-center justify-between">
-            <div className="text-sm text-muted-foreground">
-              Showing 1-3 of 12 deals
-            </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled>Previous</Button>
-              <Button variant="outline" size="sm">1</Button>
-              <Button variant="outline" size="sm">2</Button>
-              <Button variant="outline" size="sm">Next</Button>
-            </div>
-          </div>
+        <Suspense fallback={<div className="p-10 text-center">Loading deals...</div>}>
+        <DealsSection searchParams={searchParams} />
+      </Suspense>
           </div>
       </div>
-    </div>
   );
 }
