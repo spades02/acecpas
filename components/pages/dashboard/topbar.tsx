@@ -1,9 +1,28 @@
+'use client';
+
+import { useUser } from '@auth0/nextjs-auth0/client';
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Bell, ChevronDown, HelpCircle, LogOut, Search, Settings, User } from "lucide-react"
 import { DynamicBreadcrumb } from "./dynamic-breadcrumb"
 
 function Topbar() {
+  const { user, isLoading } = useUser();
+
+  const handleLogout = () => {
+    window.location.href = '/api/auth/logout';
+  };
+
+  // Get user initials for avatar
+  const getUserInitials = () => {
+    if (!user?.name) return 'U';
+    const names = user.name.split(' ');
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase();
+    }
+    return user.name.substring(0, 2).toUpperCase();
+  };
+
   return (
     <div className="h-18 w-full bg-white border-b border-border shadow-sm px-6 flex items-center justify-between sticky top-0 z-50">
       {/* Breadcrumb */}
@@ -15,7 +34,7 @@ function Topbar() {
         <Button variant="ghost" size="icon" className="relative">
           <Search className="w-5 h-5" />
         </Button>
-        
+
         {/* Notifications Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -64,35 +83,47 @@ function Topbar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        
+
         {/* User Profile Dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="flex items-center gap-2 h-auto p-2">
-              <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-sm font-semibold">
-                SC
-              </div>
+              {user?.picture ? (
+                <img
+                  src={user.picture}
+                  alt={user.name || 'User'}
+                  className="w-10 h-10 rounded-full object-cover"
+                />
+              ) : (
+                <div className="w-10 h-10 bg-primary rounded-full flex items-center justify-center text-primary-foreground text-sm font-semibold">
+                  {isLoading ? '...' : getUserInitials()}
+                </div>
+              )}
               <div className="text-left hidden md:block">
-                <div className="text-sm font-medium">Sarah Chen</div>
-                <div className="text-xs text-muted-foreground">Admin</div>
+                <div className="text-sm font-medium">
+                  {isLoading ? 'Loading...' : user?.name || 'User'}
+                </div>
+                <div className="text-xs text-muted-foreground">
+                  {isLoading ? '' : user?.email || ''}
+                </div>
               </div>
               <ChevronDown className="w-4 h-4 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">
             <div className="px-4 py-3 border-b">
-              <div className="font-medium">Sarah Chen</div>
-              <div className="text-sm text-muted-foreground">sarah.chen@kpmg.com</div>
+              <div className="font-medium">{user?.name || 'User'}</div>
+              <div className="text-sm text-muted-foreground">{user?.email || ''}</div>
             </div>
-            <DropdownMenuItem 
-            // onClick={() => onNavigate?.('dashboard')} 
-            className="cursor-pointer">
+            <DropdownMenuItem
+              // onClick={() => onNavigate?.('dashboard')} 
+              className="cursor-pointer">
               <User className="w-4 h-4 mr-2" />
               My Profile
             </DropdownMenuItem>
-            <DropdownMenuItem 
-            // onClick={() => onNavigate?.('settings')} 
-            className="cursor-pointer">
+            <DropdownMenuItem
+              // onClick={() => onNavigate?.('settings')} 
+              className="cursor-pointer">
               <Settings className="w-4 h-4 mr-2" />
               Settings
             </DropdownMenuItem>
@@ -101,8 +132,8 @@ function Topbar() {
               Help & Support
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem 
-            //   onClick={onLogout}
+            <DropdownMenuItem
+              onClick={handleLogout}
               className="cursor-pointer text-destructive focus:text-destructive"
             >
               <LogOut className="w-4 h-4 mr-2" />

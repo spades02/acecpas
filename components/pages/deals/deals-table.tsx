@@ -134,7 +134,7 @@ export function DealsTable({
   const totalPages = Math.ceil(totalItems / itemsPerPage);
 
   return (
-      <div className="space-y-4 w-[calc(165vh)]"> 
+      <div className="space-y-4"> 
         
         {/* --- 1. SEARCH & FILTER TOOLBAR (Detailed View Only) --- */}
         {!isHome && (
@@ -256,7 +256,7 @@ export function DealsTable({
                   <TableCell className="px-6 py-4">{getStatusBadge(deal.status)}</TableCell>
 
                   {/* Progress */}
-                  <TableCell className="px-6 py-4 w-[200px]">
+                  <TableCell className="px-6 py-4 w-[100px]">
                     <div className="flex items-center gap-3">
                       <Progress value={deal.progress} className="h-2" />
                       <span className="text-xs font-medium text-muted-foreground">{deal.progress}%</span>
