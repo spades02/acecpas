@@ -1,27 +1,24 @@
 "use client"
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 
-// Import our pieces
-import { DealFormData, INITIAL_DATA, STEPS_CONFIG } from '@/types/create-deal'; // (Assuming you move types to a file, or keep them top of file)
+import { DealFormData, INITIAL_DATA, STEPS_CONFIG } from '@/types/create-deal';
 import { StepBasicInfo } from '@/components/pages/deals/create-deal/step-basic-info';
 import { StepDealDetails } from '@/components/pages/deals/create-deal/step-deal-details';
 import { StepTimeline } from '@/components/pages/deals/create-deal/step-timeline';
 import { StepReview } from '@/components/pages/deals/create-deal/step-review';
 import { BackButton } from '@/components/ui/back-button';
 
-interface CreateDealPageProps {
-  onNavigate: (page: string) => void;
-}
-
-export default function CreateDealPage({ onNavigate }: CreateDealPageProps) {
+export default function CreateDealPage() {
+  const router = useRouter();
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<DealFormData>(INITIAL_DATA);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // --- Logic ---
   const handleInputChange = (field: keyof DealFormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
   };
@@ -35,12 +32,47 @@ export default function CreateDealPage({ onNavigate }: CreateDealPageProps) {
     if (currentStep > 1) setCurrentStep((c) => c - 1);
   };
 
-  const handleCreateDeal = () => {
-    toast.success('Deal created successfully!');
-    setTimeout(() => onNavigate('upload'), 500);
+  const handleCreateDeal = async () => {
+    setIsSubmitting(true);
+
+    try {
+      const response = await fetch('/api/deals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.dealName,
+          client_name: formData.clientName,
+          deal_type: formData.dealType || 'Quality of Earnings',
+          industry: formData.industry,
+          deal_size: formData.dealSize,
+          target_close_date: formData.targetClose || null,
+          description: formData.description,
+          status: 'draft'
+        })
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to create deal');
+      }
+
+      const { deal } = await response.json();
+
+      toast.success('Deal created successfully!');
+
+      // Navigate to the new deal or back to deals list
+      setTimeout(() => {
+        router.push(`/deals/${deal.id}`);
+      }, 500);
+
+    } catch (error) {
+      console.error('Create deal error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to create deal');
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
-  // --- Dynamic Step Rendering ---
   const renderStep = () => {
     switch (currentStep) {
       case 1: return <StepBasicInfo formData={formData} onChange={handleInputChange} />;
@@ -60,28 +92,26 @@ export default function CreateDealPage({ onNavigate }: CreateDealPageProps) {
         <p className="text-muted-foreground mt-1">Set up a new Quality of Earnings engagement</p>
       </div>
 
-      {/* Progress Stepper (Extracted logic for readability) */}
+      {/* Progress Stepper */}
       <div className="flex items-center justify-between mb-8">
         {STEPS_CONFIG.map((step, idx) => {
           const isCompleted = currentStep > step.number;
           const isCurrent = currentStep === step.number;
-          
+
           return (
             <div key={step.number} className="flex items-center flex-1">
               <div className="flex flex-col items-center flex-1">
-                <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all ${
-                  isCurrent || isCompleted
+                <div className={`w-12 h-12 rounded-full flex items-center justify-center border-2 transition-all ${isCurrent || isCompleted
                     ? 'bg-primary border-primary text-primary-foreground'
                     : 'bg-background border-border text-muted-foreground'
-                }`}>
+                  }`}>
                   {isCompleted ? <Check className="w-6 h-6" /> : <step.icon className="w-6 h-6" />}
                 </div>
                 <div className="text-sm font-medium mt-2 text-center">{step.title}</div>
               </div>
               {idx < STEPS_CONFIG.length - 1 && (
-                <div className={`h-0.5 flex-1 mx-4 transition-all ${
-                  currentStep > step.number ? 'bg-primary' : 'bg-border'
-                }`} />
+                <div className={`h-0.5 flex-1 mx-4 transition-all ${currentStep > step.number ? 'bg-primary' : 'bg-border'
+                  }`} />
               )}
             </div>
           );
@@ -95,7 +125,7 @@ export default function CreateDealPage({ onNavigate }: CreateDealPageProps) {
 
       {/* Navigation Footer */}
       <div className="flex items-center justify-between">
-        <Button variant="outline" onClick={handleBack} disabled={currentStep === 1}>
+        <Button variant="outline" onClick={handleBack} disabled={currentStep === 1 || isSubmitting}>
           <ArrowLeft className="w-4 h-4 mr-2" /> Back
         </Button>
 
@@ -103,10 +133,10 @@ export default function CreateDealPage({ onNavigate }: CreateDealPageProps) {
           Step {currentStep} of {STEPS_CONFIG.length}
         </div>
 
-        <Button onClick={handleNext}>
+        <Button onClick={handleNext} disabled={isSubmitting}>
           {currentStep === 4 ? (
             <>
-              <Check className="w-4 h-4 mr-2" /> Create Deal
+              {isSubmitting ? 'Creating...' : <><Check className="w-4 h-4 mr-2" /> Create Deal</>}
             </>
           ) : (
             <>
