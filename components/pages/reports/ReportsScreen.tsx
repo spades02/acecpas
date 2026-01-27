@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MOCK_REPORT_DATA, ReportData } from "@/data/reports-data"; // Import from Part 1
+import { BackButton } from "@/components/ui/back-button";
 
 interface ReportsScreenProps {
   onNavigate: (page: string) => void;
@@ -19,9 +20,10 @@ const formatCurrency = (value: number | null) => {
 };
 
 export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsScreenProps) {
-  
+
   return (
     <div className="p-6 space-y-6">
+      <BackButton />
       {/* Completion Banner */}
       <Card className="p-6 bg-green-50 border-green-200">
         <div className="flex items-start gap-4">
@@ -113,7 +115,7 @@ export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsSc
                               <tr key={`header-${idx}`} className="bg-gray-100 font-semibold">
                                 <td className="px-3 py-2 border" colSpan={6}>{section.title}</td>
                               </tr>
-                              
+
                               {/* Rows */}
                               {section.rows.map((row) => (
                                 <tr key={row.accountNum} className="hover:bg-blue-50">
@@ -213,7 +215,7 @@ export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsSc
                   {/* Executive Summary Page */}
                   <div className="bg-white rounded shadow-lg p-8">
                     <h2 className="text-2xl font-bold text-foreground mb-6 pb-3 border-b">Executive Summary</h2>
-                    
+
                     <div className="space-y-6">
                       {/* Deal Overview */}
                       <div>
@@ -242,7 +244,7 @@ export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsSc
                         </h3>
                         <div className="ml-8 grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {data.pdf.highlights.map((highlight, index) => (
-                             <div key={index} className={`p-3 rounded border bg-${highlight.colorTheme}-50 border-${highlight.colorTheme}-200`}>
+                            <div key={index} className={`p-3 rounded border bg-${highlight.colorTheme}-50 border-${highlight.colorTheme}-200`}>
                               <div className={`text-xs mb-1 text-${highlight.colorTheme}-700`}>{highlight.label}</div>
                               <div className={`text-xl font-bold text-${highlight.colorTheme}-800`}>{highlight.value}</div>
                               {highlight.subtext && (
@@ -266,10 +268,10 @@ export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsSc
                         </h3>
                         <div className="text-sm space-y-2 ml-8">
                           {data.pdf.findings.map((finding, idx) => (
-                             <div key={idx} className="flex items-start gap-2">
+                            <div key={idx} className="flex items-start gap-2">
                               <div className={`w-5 h-5 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${finding.type === 'success' ? 'bg-green-100' : 'bg-amber-100'}`}>
-                                {finding.type === 'success' ? 
-                                  <CheckCircle className="w-3 h-3 text-green-600" /> : 
+                                {finding.type === 'success' ?
+                                  <CheckCircle className="w-3 h-3 text-green-600" /> :
                                   <AlertTriangle className="w-3 h-3 text-amber-600" />
                                 }
                               </div>
@@ -316,8 +318,8 @@ export function ReportsScreen({ onNavigate, data = MOCK_REPORT_DATA }: ReportsSc
                           <div className="flex items-center gap-2 mb-2">
                             <Badge className={
                               item.priority === 'High' ? 'bg-red-100 text-red-800 border-red-200' :
-                              item.priority === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-200' :
-                              'bg-blue-100 text-blue-800 border-blue-200'
+                                item.priority === 'Medium' ? 'bg-amber-100 text-amber-800 border-amber-200' :
+                                  'bg-blue-100 text-blue-800 border-blue-200'
                             }>
                               {item.priority} Priority
                             </Badge>

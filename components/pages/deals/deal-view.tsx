@@ -122,11 +122,11 @@ export function DealView({ deal }: DealViewProps) {
                 )}
 
                 {view === 'mapper' && (
-                    <MapperScreen onNavigate={handleNavigate} />
+                    <MapperScreen dealId={deal.id} onNavigate={handleNavigate} />
                 )}
 
                 {view === 'open-items' && (
-                    <OpenItemsScreen onNavigate={handleNavigate} />
+                    <OpenItemsScreen dealId={deal.id} onNavigate={handleNavigate} />
                 )}
 
             </div>

@@ -4,6 +4,7 @@ export type ReportStatus = "Ready for Export" | "Draft" | "Archived" | "Processi
 
 export interface ReportSummary {
   id: string;
+  dealId: string; // Added for navigation
   dealName: string;
   clientName: string;
   type: string; // e.g., "QoE Analysis", "Tax Compliance"
@@ -18,6 +19,7 @@ export interface ReportSummary {
 export const MOCK_REPORTS_LIST: ReportSummary[] = [
   {
     id: "rep-001",
+    dealId: "c26201a7-a85e-49a0-8da2-432fde8f141c",
     dealName: "Acme Corp Acquisition",
     clientName: "Acme Industries Inc.",
     type: "QoE Analysis",
@@ -30,6 +32,7 @@ export const MOCK_REPORTS_LIST: ReportSummary[] = [
   },
   {
     id: "rep-002",
+    dealId: "deal-002",
     dealName: "TechFlow Merger",
     clientName: "Global Systems Ltd",
     type: "Financial Due Diligence",
@@ -42,6 +45,7 @@ export const MOCK_REPORTS_LIST: ReportSummary[] = [
   },
   {
     id: "rep-003",
+    dealId: "deal-003",
     dealName: "Apex Logistics Audit",
     clientName: "Apex Logistics",
     type: "Annual Audit",
@@ -54,6 +58,7 @@ export const MOCK_REPORTS_LIST: ReportSummary[] = [
   },
   {
     id: "rep-004",
+    dealId: "deal-004",
     dealName: "Sunrise Energy Series B",
     clientName: "Sunrise Capital",
     type: "Valuation Report",
@@ -66,6 +71,7 @@ export const MOCK_REPORTS_LIST: ReportSummary[] = [
   },
   {
     id: "rep-005",
+    dealId: "deal-005",
     dealName: "NorthEnd Retail Expansion",
     clientName: "NorthEnd Group",
     type: "Feasibility Study",
@@ -78,6 +84,7 @@ export const MOCK_REPORTS_LIST: ReportSummary[] = [
   },
   {
     id: "rep-006",
+    dealId: "deal-006",
     dealName: "Quantum Soft IP Valuation",
     clientName: "Quantum Soft",
     type: "IP Valuation",

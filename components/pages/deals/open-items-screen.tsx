@@ -8,10 +8,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 
 interface OpenItemsScreenProps {
+    dealId: string;
     onNavigate: (page: string) => void;
 }
 
-export function OpenItemsScreen({ onNavigate }: OpenItemsScreenProps) {
+export function OpenItemsScreen({ dealId, onNavigate }: OpenItemsScreenProps) {
     const openItems = [
         {
             id: '1',

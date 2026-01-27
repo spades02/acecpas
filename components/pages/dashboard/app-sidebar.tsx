@@ -1,7 +1,9 @@
 'use client'
 
-import { useUser } from '@auth0/nextjs-auth0/client'
+import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useUser } from '@auth0/nextjs-auth0/client'
 import { ChevronDown, ClipboardMinus, Folder, FolderArchive, FolderOpenDot, Handshake, HelpCircle, Home, LogOut, Settings, User } from "lucide-react"
 
 import {
@@ -19,7 +21,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Progress } from "@/components/ui/progress"
-// import { useEffect, useState } from 'react'
+import { useAuth } from '@/components/providers/auth-provider'
 
 const mainItems = [
   {
@@ -46,12 +48,9 @@ const dealItems = [
   { title: "Archived", url: "/deals/archived", icon: FolderArchive },
 ]
 
-// ... imports
-import { useAuth } from '@/components/providers/auth-provider'
-
 export default function AppSidebar() {
   const pathname = usePathname();
-  const { profile, isLoading } = useAuth(); // Remove 'user'
+  const { profile, isLoading } = useAuth();
 
   // We can still use useUser for the picture if needed
   const { user: auth0User } = useUser();
@@ -61,12 +60,32 @@ export default function AppSidebar() {
   const currentPicture = profile?.avatar_url || auth0User?.picture;
 
   // Check if we are in a deal context (e.g., /deals/[uuid])
-  const isDealContext = pathname?.match(/\/deals\/[0-9a-fA-F-]{36}/);
+  const dealIdMatch = pathname?.match(/\/deals\/([0-9a-fA-F-]{36})/)
+  const isDealContext = !!dealIdMatch
+  const currentDealId = dealIdMatch ? dealIdMatch[1] : null
 
-  // In a real app, we might want to fetch the deal name here or pass it via context
-  // Placeholder until context value is available
-  const currentDealName = "Acme Corp Acquisition";
-  const currentDealProgress = 50;
+  // State for dynamic deal info
+  const [dealInfo, setDealInfo] = useState<{ name: string; progress: number } | null>(null)
+
+  useEffect(() => {
+    if (currentDealId) {
+      // Reset or keep optional loading state if needed
+      // Fetch deal details
+      fetch(`/api/deals/${currentDealId}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.deal) {
+            setDealInfo({ name: data.deal.name, progress: data.deal.progress || 0 })
+          }
+        })
+        .catch(err => console.error("Failed to fetch deal info", err))
+    } else {
+      setDealInfo(null)
+    }
+  }, [currentDealId])
+
+  const currentDealName = dealInfo?.name
+  const currentDealProgress = dealInfo?.progress
 
   // Get user initials for avatar fallback
   const getUserInitials = () => {
@@ -103,10 +122,10 @@ export default function AppSidebar() {
               {mainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild isActive={pathname === item.url}>
-                    <a href={item.url}>
+                    <Link href={item.url}>
                       <item.icon />
                       <span>{item.title}</span>
-                    </a>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               ))}
@@ -128,10 +147,10 @@ export default function AppSidebar() {
                   {dealItems.map((item) => (
                     <SidebarMenuItem key={item.title}>
                       <SidebarMenuButton asChild isActive={pathname?.startsWith(item.url)}>
-                        <a href={item.url}>
+                        <Link href={item.url}>
                           <item.icon />
                           <span>{item.title}</span>
-                        </a>
+                        </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                   ))}
@@ -142,7 +161,7 @@ export default function AppSidebar() {
         </Collapsible>
 
         {/* Current Deal Section - Only visible when in a deal */}
-        {isDealContext && (
+        {isDealContext && currentDealId && (
           <div className="mt-4 mx-4 p-4 bg-primary/5 rounded-xl border border-primary/10">
             <div className="text-xs font-semibold text-primary mb-2 uppercase tracking-wider">Current Deal</div>
             <div className="font-semibold text-sm text-foreground mb-1 truncate" title={currentDealName}>
@@ -157,26 +176,38 @@ export default function AppSidebar() {
             </div>
 
             <div className="mt-4 space-y-1">
-              {/* Deal Specific Context Links Could Go Here */}
+              {/* Deal Specific Context Links */}
               <SidebarMenu>
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname.endsWith('/files')}>
-                    <span className="text-xs font-medium pl-0">Upload Files</span>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/files')}>
+                    <Link href={`/deals/${currentDealId}/files`}>
+                      <FolderOpenDot className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Upload Files</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname.endsWith('/mapper')}>
-                    <span className="text-xs font-medium pl-0">Mapper</span>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/mapper')}>
+                    <Link href={`/deals/${currentDealId}/mapper`}>
+                      <ClipboardMinus className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Mapper</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname.endsWith('/open-items')}>
-                    <span className="text-xs font-medium pl-0">Open Items</span>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/open-items')}>
+                    <Link href={`/deals/${currentDealId}/open-items`}>
+                      <HelpCircle className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Open Items</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
-                  <SidebarMenuButton asChild isActive={pathname.endsWith('/reports')}>
-                    <span className="text-xs font-medium pl-0">Reports</span>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/reports')}>
+                    <Link href={`/deals/${currentDealId}/reports`}>
+                      <Folder className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Reports</span>
+                    </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
               </SidebarMenu>

@@ -11,19 +11,21 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <AuthProvider>
-      <SidebarProvider>
-        <AppSidebar />
-        {/* SidebarInset fills the remaining space automatically */}
-        <SidebarInset>
-          <Topbar />
-          <main>
-            {children}
-          </main>
-          <Toaster />
-          <ProfileCompletionModal />
-        </SidebarInset>
-      </SidebarProvider>
-    </AuthProvider>
+    <div className="flex-1 overflow-x-hidden">
+      <AuthProvider>
+        <SidebarProvider>
+          <AppSidebar />
+          {/* SidebarInset fills the remaining space automatically */}
+          <SidebarInset>
+            <Topbar />
+            <main>
+              {children}
+            </main>
+            <Toaster />
+            <ProfileCompletionModal />
+          </SidebarInset>
+        </SidebarProvider>
+      </AuthProvider>
+    </div>
   )
 }
