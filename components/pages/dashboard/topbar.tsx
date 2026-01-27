@@ -34,7 +34,7 @@ function Topbar() {
   };
 
   return (
-    <div className="h-18 w-full bg-white border-b border-border shadow-sm px-6 flex items-center justify-between sticky top-0 z-50">
+    <div className="h-16 w-full bg-white border-b border-border shadow-sm px-6 flex items-center justify-between sticky top-0 z-50">
       {/* Breadcrumb */}
       <DynamicBreadcrumb />
 

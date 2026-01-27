@@ -10,7 +10,7 @@ interface DealsStatsProps {
 
 export function DealsStats({ total, active, completed, archived }: DealsStatsProps) {
   return (
-    <div className="grid grid-cols-4 gap-6">
+    <div className="grid gap-6 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
       <Card className="p-4 border-l-4 border-l-primary">
         <div className="flex items-center gap-3 mb-2">
           <FolderOpen className="w-7 h-7 text-primary" />

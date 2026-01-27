@@ -115,7 +115,7 @@ export function DealView({ deal }: DealViewProps) {
             </div>
 
             {/* --- CONTENT AREA (Managed by 'view' State) --- */}
-            <div className="flex-1 bg-slate-50/50 p-6 w-full">
+            <div className="flex-1 bg-slate-50/50 p-6 w-full overflow-auto">
 
                 {view === 'files' && (
                     <FilesTab dealId={deal.id} onNavigate={handleNavigate} />

@@ -1,126 +1,261 @@
 "use client"
 
-import { useState } from "react";
-import { CheckCircle, AlertTriangle, HelpCircle, Download, Check, Search } from "lucide-react";
-import { Card } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { useState, useEffect } from "react"
+import { CheckCircle, AlertTriangle, HelpCircle, Download, Check, Search, Loader2 } from "lucide-react"
+import { Card } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Input } from "@/components/ui/input"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
+import { toast } from "sonner"
 
 interface MapperScreenProps {
-    dealId: string;
-    onNavigate: (page: string) => void;
+    dealId: string
+    onNavigate: (page: string) => void
 }
 
 interface MappingRow {
-    id: string;
-    originalAccount: string;
-    description: string;
-    sampleTransactions: string;
-    mappedTo: string;
-    confidence: number;
-    status: 'auto-approved' | 'needs-review' | 'unmapped';
+    id: string
+    originalAccount: string
+    accountNumber: string | null
+    accountName: string | null
+    description: string | null
+    vendorName: string | null
+    transactionCount: number
+    totalAmount: number
+    mappingId: string | null
+    mappedTo: string | null
+    mappedToCode: string | null
+    mappedToId: string | null
+    category: string | null
+    confidence: number
+    approvalStatus: string
+    aiReasoning: string | null
+    status: 'auto-approved' | 'needs-review' | 'unmapped'
+}
+
+interface MasterAccount {
+    id: string
+    code: string
+    name: string
+    type: string
+    category: string
+    subcategory: string
 }
 
 export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
-    const [selectedRow, setSelectedRow] = useState<MappingRow | null>(null);
-    const [selectedRows, setSelectedRows] = useState<string[]>([]);
-    const [activeFilter, setActiveFilter] = useState<string>('all');
-    const [searchQuery, setSearchQuery] = useState<string>('');
+    const [mappings, setMappings] = useState<MappingRow[]>([])
+    const [masterAccounts, setMasterAccounts] = useState<MasterAccount[]>([])
+    const [loading, setLoading] = useState(true)
+    const [selectedRow, setSelectedRow] = useState<MappingRow | null>(null)
+    const [selectedRows, setSelectedRows] = useState<string[]>([])
+    const [activeFilter, setActiveFilter] = useState<string>('all')
+    const [searchQuery, setSearchQuery] = useState<string>('')
+    const [approving, setApproving] = useState(false)
 
-    const mappings: MappingRow[] = [
-        {
-            id: '1',
-            originalAccount: '6200 - Office Supplies',
-            description: 'Paper, pens, toner, etc.',
-            sampleTransactions: 'Staples, Office Depot',
-            mappedTo: 'Office Expenses',
-            confidence: 96,
-            status: 'auto-approved',
-        },
-        {
-            id: '2',
-            originalAccount: '8750 - Misc Expense',
-            description: 'Various purchases',
-            sampleTransactions: 'Amazon, Walmart',
-            mappedTo: 'Office Supplies?',
-            confidence: 72,
-            status: 'needs-review',
-        },
-        {
-            id: '3',
-            originalAccount: 'Account 9999',
-            description: '',
-            sampleTransactions: '',
-            mappedTo: '',
-            confidence: 15,
-            status: 'unmapped',
-        },
-        {
-            id: '4',
-            originalAccount: '4100 - Professional Fees',
-            description: 'Consulting and advisory',
-            sampleTransactions: 'McKinsey, Deloitte',
-            mappedTo: 'Professional Services',
-            confidence: 94,
-            status: 'auto-approved',
-        },
-        {
-            id: '5',
-            originalAccount: '5200 - Travel & Entertainment',
-            description: 'Business travel expenses',
-            sampleTransactions: 'United Airlines, Marriott',
-            mappedTo: 'Travel Expenses',
-            confidence: 91,
-            status: 'auto-approved',
-        },
-    ];
+    // Fetch mappings and master COA
+    useEffect(() => {
+        fetchData()
+    }, [dealId])
+
+    async function fetchData() {
+        try {
+            setLoading(true)
+
+            // Fetch mappings and master COA in parallel
+            const [mappingsRes, coaRes] = await Promise.all([
+                fetch(`/api/mappings?dealId=${dealId}`),
+                fetch('/api/master-coa')
+            ])
+
+            const mappingsData = await mappingsRes.json()
+            const coaData = await coaRes.json()
+
+            if (mappingsData.success) {
+                setMappings(mappingsData.mappings)
+            }
+
+            if (coaData.success) {
+                setMasterAccounts(coaData.accounts)
+            }
+        } catch (error) {
+            console.error('Error fetching data:', error)
+            toast.error('Failed to load mapping data')
+        } finally {
+            setLoading(false)
+        }
+    }
+
+    async function handleApprove(mappingId: string) {
+        if (!mappingId) return
+
+        try {
+            setApproving(true)
+            const res = await fetch('/api/mappings', {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    mappingId,
+                    action: 'approve'
+                })
+            })
+
+            const data = await res.json()
+
+            if (data.success) {
+                toast.success('Mapping approved')
+                fetchData()
+                setSelectedRow(null)
+            } else {
+                toast.error(data.error || 'Failed to approve')
+            }
+        } catch (error) {
+            console.error('Error approving:', error)
+            toast.error('Failed to approve mapping')
+        } finally {
+            setApproving(false)
+        }
+    }
+
+    async function handleBulkApprove() {
+        const highConfidenceMappings = mappings.filter(
+            m => m.confidence >= 90 && m.status !== 'auto-approved' && m.mappingId
+        )
+
+        if (highConfidenceMappings.length === 0) {
+            toast.info('No high-confidence mappings to approve')
+            return
+        }
+
+        try {
+            setApproving(true)
+
+            for (const mapping of highConfidenceMappings) {
+                await fetch('/api/mappings', {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        mappingId: mapping.mappingId,
+                        action: 'approve'
+                    })
+                })
+            }
+
+            toast.success(`Approved ${highConfidenceMappings.length} mappings`)
+            fetchData()
+        } catch (error) {
+            console.error('Error bulk approving:', error)
+            toast.error('Failed to approve mappings')
+        } finally {
+            setApproving(false)
+        }
+    }
+
+    async function handleMapAccount(clientAccountId: string, masterAccountId: string) {
+        try {
+            const res = await fetch('/api/mappings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dealId,
+                    clientAccountId,
+                    masterAccountId,
+                    confidenceScore: 100
+                })
+            })
+
+            const data = await res.json()
+
+            if (data.success) {
+                toast.success('Account mapped successfully')
+                fetchData()
+                setSelectedRow(null)
+            } else {
+                toast.error(data.error || 'Failed to map account')
+            }
+        } catch (error) {
+            console.error('Error mapping account:', error)
+            toast.error('Failed to map account')
+        }
+    }
 
     const filteredMappings = mappings.filter(mapping => {
         // Filter by Status
         if (activeFilter !== 'all') {
-            if (activeFilter === 'high' && mapping.status !== 'auto-approved') return false;
-            if (activeFilter === 'review' && mapping.status !== 'needs-review') return false;
-            if (activeFilter === 'unmapped' && mapping.status !== 'unmapped') return false;
+            if (activeFilter === 'high' && mapping.status !== 'auto-approved') return false
+            if (activeFilter === 'review' && mapping.status !== 'needs-review') return false
+            if (activeFilter === 'unmapped' && mapping.status !== 'unmapped') return false
         }
 
         // Filter by Search Query
         if (searchQuery) {
-            const query = searchQuery.toLowerCase();
+            const query = searchQuery.toLowerCase()
             return (
                 mapping.originalAccount.toLowerCase().includes(query) ||
-                mapping.description.toLowerCase().includes(query) ||
-                mapping.mappedTo.toLowerCase().includes(query) ||
-                mapping.sampleTransactions.toLowerCase().includes(query)
-            );
+                (mapping.description || '').toLowerCase().includes(query) ||
+                (mapping.mappedTo || '').toLowerCase().includes(query) ||
+                (mapping.vendorName || '').toLowerCase().includes(query)
+            )
         }
 
-        return true;
-    });
+        return true
+    })
 
     const getConfidenceBadge = (confidence: number) => {
         if (confidence >= 90) {
-            return <Badge className="bg-green-100 text-green-800 border-green-200">{confidence}%</Badge>;
+            return <Badge className="bg-green-100 text-green-800 border-green-200">{confidence}%</Badge>
         } else if (confidence >= 70) {
-            return <Badge className="bg-amber-100 text-amber-800 border-amber-200">{confidence}%</Badge>;
+            return <Badge className="bg-amber-100 text-amber-800 border-amber-200">{confidence}%</Badge>
         } else {
-            return <Badge className="bg-red-100 text-red-800 border-red-200">{confidence}%</Badge>;
+            return <Badge className="bg-red-100 text-red-800 border-red-200">{confidence}%</Badge>
         }
-    };
+    }
 
     const getStatusIcon = (status: string) => {
-        if (status === 'auto-approved') return <div className="w-2 h-2 bg-green-500 rounded-full" />;
-        if (status === 'needs-review') return <div className="w-2 h-2 bg-amber-500 rounded-full" />;
-        return <div className="w-2 h-2 bg-red-500 rounded-full" />;
-    };
+        if (status === 'auto-approved') return <div className="w-2 h-2 bg-green-500 rounded-full" />
+        if (status === 'needs-review') return <div className="w-2 h-2 bg-amber-500 rounded-full" />
+        return <div className="w-2 h-2 bg-red-500 rounded-full" />
+    }
 
     const stats = {
         autoMapped: mappings.filter(m => m.status === 'auto-approved').length,
         needsReview: mappings.filter(m => m.status === 'needs-review').length,
         unmapped: mappings.filter(m => m.status === 'unmapped').length,
-    };
+    }
+
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <Loader2 className="w-8 h-8 animate-spin text-muted-foreground" />
+            </div>
+        )
+    }
+
+    // Show empty state if no client accounts exist
+    if (mappings.length === 0) {
+        return (
+            <div className="h-[calc(100vh-14rem)] flex flex-col items-center justify-center">
+                <Card className="p-12 text-center max-w-md">
+                    <HelpCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold mb-2">No Client Accounts Found</h3>
+                    <p className="text-muted-foreground mb-4">
+                        Upload files and process them to extract client accounts for mapping.
+                    </p>
+                    <Button onClick={() => onNavigate('files')}>
+                        Go to File Upload
+                    </Button>
+                </Card>
+            </div>
+        )
+    }
 
     return (
         <div className="h-[calc(100vh-14rem)] flex flex-col justify-between">
@@ -129,7 +264,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                 <div className="flex items-center justify-between mb-4">
                     <div className="text-xs text-muted-foreground flex items-center gap-2">
                         <Check className="w-4 h-4 text-green-600" />
-                        <span>All changes saved • Last saved 2:45 PM</span>
+                        <span>All changes saved</span>
                     </div>
                 </div>
 
@@ -142,8 +277,8 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                             </div>
                             <div className="flex-1">
                                 <div className="text-2xl font-bold text-foreground">{stats.autoMapped} accounts</div>
-                                <Badge className="bg-green-100 text-green-800 text-xs mt-1 border-green-200">High Confidence (&gt;90%)</Badge>
-                                <div className="text-xs text-muted-foreground mt-1">Ready to approve</div>
+                                <Badge className="bg-green-100 text-green-800 text-xs mt-1 border-green-200">Approved</Badge>
+                                <div className="text-xs text-muted-foreground mt-1">Ready for export</div>
                             </div>
                         </div>
                     </Card>
@@ -156,7 +291,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                             </div>
                             <div className="flex-1">
                                 <div className="text-2xl font-bold text-foreground">{stats.needsReview} accounts</div>
-                                <Badge className="bg-amber-100 text-amber-800 text-xs mt-1 border-amber-200">Low Confidence (&lt;90%)</Badge>
+                                <Badge className="bg-amber-100 text-amber-800 text-xs mt-1 border-amber-200">Needs Review</Badge>
                                 <div className="text-xs text-muted-foreground mt-1">Manual review recommended</div>
                             </div>
                         </div>
@@ -193,7 +328,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                     size="sm"
                     onClick={() => setActiveFilter('high')}
                 >
-                    High Confidence ({stats.autoMapped})
+                    Approved ({stats.autoMapped})
                 </Button>
                 <Button
                     variant={activeFilter === 'review' ? 'default' : 'ghost'}
@@ -225,8 +360,13 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                     <Download className="w-4 h-4 mr-2" />
                     Export to Excel
                 </Button>
-                <Button size="sm">
-                    Auto-Approve All High Confidence
+                <Button
+                    size="sm"
+                    onClick={handleBulkApprove}
+                    disabled={approving || stats.needsReview === 0}
+                >
+                    {approving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                    Auto-Approve High Confidence
                 </Button>
             </div>
 
@@ -247,7 +387,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                     Description
                                 </th>
                                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Sample Transactions
+                                    Transactions
                                 </th>
                                 <th className="w-8 px-2 py-3"></th>
                                 <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
@@ -275,9 +415,9 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                             checked={selectedRows.includes(mapping.id)}
                                             onCheckedChange={(checked) => {
                                                 if (checked) {
-                                                    setSelectedRows([...selectedRows, mapping.id]);
+                                                    setSelectedRows([...selectedRows, mapping.id])
                                                 } else {
-                                                    setSelectedRows(selectedRows.filter(id => id !== mapping.id));
+                                                    setSelectedRows(selectedRows.filter(id => id !== mapping.id))
                                                 }
                                             }}
                                             onClick={(e) => e.stopPropagation()}
@@ -295,8 +435,12 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                         </div>
                                     </td>
                                     <td className="px-4 py-3">
-                                        <div className="text-sm text-muted-foreground truncate max-w-[150px]">
-                                            {mapping.sampleTransactions || <span className="text-gray-300">—</span>}
+                                        <div className="text-sm text-muted-foreground">
+                                            {mapping.transactionCount > 0 ? (
+                                                <span>{mapping.transactionCount} txns</span>
+                                            ) : (
+                                                <span className="text-gray-300">—</span>
+                                            )}
                                         </div>
                                     </td>
                                     <td className="px-2 py-3">
@@ -318,7 +462,9 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                         )}
                                     </td>
                                     <td className="px-4 py-3">
-                                        {getConfidenceBadge(mapping.confidence)}
+                                        {mapping.confidence > 0 ? getConfidenceBadge(mapping.confidence) : (
+                                            <Badge className="bg-gray-100 text-gray-500 border-gray-200">N/A</Badge>
+                                        )}
                                     </td>
                                     <td className="px-4 py-3">
                                         {mapping.status === 'auto-approved' ? (
@@ -326,11 +472,27 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                                 <Check className="w-4 h-4" /> Approved
                                             </span>
                                         ) : mapping.status === 'needs-review' ? (
-                                            <Button variant="outline" size="sm" className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="border-amber-300 text-amber-700 hover:bg-amber-50"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setSelectedRow(mapping)
+                                                }}
+                                            >
                                                 Review
                                             </Button>
                                         ) : (
-                                            <Button variant="outline" size="sm" className="border-red-300 text-red-700 hover:bg-red-50">
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                className="border-red-300 text-red-700 hover:bg-red-50"
+                                                onClick={(e) => {
+                                                    e.stopPropagation()
+                                                    setSelectedRow(mapping)
+                                                }}
+                                            >
                                                 Map Manually
                                             </Button>
                                         )}
@@ -345,11 +507,19 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
             {/* Bottom Status Bar */}
             <div className="bg-muted border-t border-border px-6 py-3 flex items-center justify-between">
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    <span>{stats.needsReview + stats.unmapped} items need review before proceeding</span>
+                    {stats.needsReview + stats.unmapped > 0 ? (
+                        <>
+                            <AlertTriangle className="w-4 h-4 text-amber-600" />
+                            <span>{stats.needsReview + stats.unmapped} items need review before proceeding</span>
+                        </>
+                    ) : (
+                        <>
+                            <CheckCircle className="w-4 h-4 text-green-600" />
+                            <span>All accounts mapped and approved!</span>
+                        </>
+                    )}
                 </div>
                 <div className="flex items-center gap-4">
-                    <div className="text-sm text-muted-foreground">Page 1 of 20</div>
                     <Button variant="outline" size="sm" onClick={() => onNavigate('files')}>
                         Back to Upload
                     </Button>
@@ -373,36 +543,41 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                 <div className="space-y-2">
                                     <div className="text-xs font-medium text-muted-foreground uppercase">Original Account</div>
                                     <Card className="p-4 bg-muted">
-                                        <div className="text-lg font-bold text-foreground">{selectedRow.originalAccount.split(' - ')[0]}</div>
-                                        <div className="font-medium text-foreground mt-1">{selectedRow.originalAccount.split(' - ')[1] || 'No name'}</div>
+                                        <div className="text-lg font-bold text-foreground">
+                                            {selectedRow.accountNumber || selectedRow.originalAccount.split(' - ')[0]}
+                                        </div>
+                                        <div className="font-medium text-foreground mt-1">
+                                            {selectedRow.accountName || selectedRow.originalAccount.split(' - ')[1] || 'No name'}
+                                        </div>
                                         {selectedRow.description && (
                                             <div className="text-sm text-muted-foreground mt-2">{selectedRow.description}</div>
                                         )}
                                     </Card>
                                 </div>
 
-                                {/* Sample Transactions */}
-                                {selectedRow.sampleTransactions && (
+                                {/* Transaction Summary */}
+                                {selectedRow.transactionCount > 0 && (
                                     <div className="space-y-2">
-                                        <div className="text-xs font-medium text-muted-foreground uppercase">Recent Transactions</div>
-                                        <Card className="divide-y">
-                                            {selectedRow.sampleTransactions.split(', ').map((vendor, i) => (
-                                                <div key={i} className="p-3 bg-muted">
-                                                    <div className="flex items-center justify-between">
-                                                        <div className="font-medium text-sm">{vendor}</div>
-                                                        <div className="text-sm font-bold">${(Math.random() * 1000).toFixed(2)}</div>
-                                                    </div>
-                                                    <div className="text-xs text-muted-foreground mt-1">
-                                                        {new Date(Date.now() - Math.random() * 30 * 24 * 60 * 60 * 1000).toLocaleDateString()}
-                                                    </div>
+                                        <div className="text-xs font-medium text-muted-foreground uppercase">Transaction Summary</div>
+                                        <Card className="p-4 bg-muted">
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div>
+                                                    <div className="text-2xl font-bold">{selectedRow.transactionCount}</div>
+                                                    <div className="text-xs text-muted-foreground">Transactions</div>
                                                 </div>
-                                            ))}
+                                                <div>
+                                                    <div className="text-2xl font-bold">
+                                                        ${(selectedRow.totalAmount || 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                                    </div>
+                                                    <div className="text-xs text-muted-foreground">Total Amount</div>
+                                                </div>
+                                            </div>
                                         </Card>
                                     </div>
                                 )}
 
-                                {/* AI Recommendation */}
-                                {selectedRow.mappedTo && (
+                                {/* AI Recommendation or Manual Mapping */}
+                                {selectedRow.mappedTo ? (
                                     <Card className="p-5 bg-blue-50 border-blue-200">
                                         <div className="flex items-start gap-3 mb-4">
                                             <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center text-primary-foreground text-lg">
@@ -410,32 +585,64 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                             </div>
                                             <div className="flex-1">
                                                 <div className="font-semibold text-primary">AI Suggested Mapping</div>
-                                                <div className="text-xl font-bold text-foreground mt-2">{selectedRow.mappedTo.replace('?', '')}</div>
+                                                <div className="text-xl font-bold text-foreground mt-2">{selectedRow.mappedTo}</div>
                                             </div>
                                             <div className="w-14 h-14 rounded-full bg-amber-100 flex items-center justify-center">
                                                 <div className="text-lg font-bold text-amber-800">{selectedRow.confidence}%</div>
                                             </div>
                                         </div>
 
-                                        <div className="space-y-2">
-                                            <div className="text-xs font-medium text-muted-foreground uppercase">Why This Mapping?</div>
-                                            <div className="bg-white p-3 rounded-lg text-sm text-foreground leading-relaxed">
-                                                Based on 23 similar mappings from historical data. Keywords matched: 'supplies', 'office'.
-                                                This category is commonly used for operational expenses.
+                                        {selectedRow.aiReasoning && (
+                                            <div className="space-y-2">
+                                                <div className="text-xs font-medium text-muted-foreground uppercase">Why This Mapping?</div>
+                                                <div className="bg-white p-3 rounded-lg text-sm text-foreground leading-relaxed">
+                                                    {selectedRow.aiReasoning}
+                                                </div>
                                             </div>
-                                        </div>
+                                        )}
                                     </Card>
+                                ) : (
+                                    <div className="space-y-2">
+                                        <div className="text-xs font-medium text-muted-foreground uppercase">Select Mapping</div>
+                                        <Select onValueChange={(value) => handleMapAccount(selectedRow.id, value)}>
+                                            <SelectTrigger>
+                                                <SelectValue placeholder="Select an account..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                {masterAccounts.map(account => (
+                                                    <SelectItem key={account.id} value={account.id}>
+                                                        {account.code} - {account.name}
+                                                    </SelectItem>
+                                                ))}
+                                            </SelectContent>
+                                        </Select>
+                                    </div>
                                 )}
 
                                 {/* Actions */}
                                 <div className="space-y-3">
-                                    <Button className="w-full" size="lg">
-                                        Approve AI Suggestion
+                                    {selectedRow.mappingId && selectedRow.status !== 'auto-approved' && (
+                                        <Button
+                                            className="w-full"
+                                            size="lg"
+                                            onClick={() => handleApprove(selectedRow.mappingId!)}
+                                            disabled={approving}
+                                        >
+                                            {approving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                                            Approve Mapping
+                                        </Button>
+                                    )}
+
+                                    {selectedRow.status === 'auto-approved' && (
+                                        <div className="text-center text-green-600 font-medium py-4">
+                                            <Check className="w-6 h-6 mx-auto mb-2" />
+                                            This mapping has been approved
+                                        </div>
+                                    )}
+
+                                    <Button variant="ghost" size="sm" className="w-full" onClick={() => setSelectedRow(null)}>
+                                        Close
                                     </Button>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <Button variant="outline" size="sm">Reject & Skip</Button>
-                                        <Button variant="ghost" size="sm">Cancel</Button>
-                                    </div>
                                 </div>
                             </div>
                         </>
@@ -443,5 +650,5 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                 </SheetContent>
             </Sheet>
         </div>
-    );
+    )
 }

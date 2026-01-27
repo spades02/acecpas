@@ -26,7 +26,7 @@ function LoginForm() {
 
         <div className="grid gap-6">
           <Button onClick={handleLogin} className="w-full">
-            Sign In with Auth0 <ArrowRight className="ml-2 h-4 w-4" />
+            Sign In <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
 

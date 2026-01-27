@@ -11,7 +11,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="flex-1 overflow-x-hidden">
+    <div className="flex-1">
       <AuthProvider>
         <SidebarProvider>
           <AppSidebar />

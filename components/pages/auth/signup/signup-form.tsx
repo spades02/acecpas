@@ -29,7 +29,7 @@ export default function SignUpForm() {
 
         <div className="grid gap-6">
           <Button onClick={handleSignup} className="w-full">
-            Sign Up with Auth0 <ArrowRight className="ml-2 h-4 w-4" />
+            Sign Up <ArrowRight className="ml-2 h-4 w-4" />
           </Button>
         </div>
 

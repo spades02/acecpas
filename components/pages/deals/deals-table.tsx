@@ -134,7 +134,7 @@ export function DealsTable({
   const totalPages = Math.ceil(totalItems / itemsPerPage);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 overflow-x-auto w-[1230px]">
 
       {/* --- 1. SEARCH & FILTER TOOLBAR (Detailed View Only) --- */}
       {!isHome && (
@@ -305,48 +305,38 @@ export function DealsTable({
             )}
           </TableBody>
 
-          {totalItems > 0 && (
-            <TableFooter className="bg-transparent border-t">
-              <TableRow>
-                {/* Adjust colSpan here as well */}
-                <TableCell colSpan={isHome ? 6 : 9}>
-                  <div className="flex items-center justify-between px-2 w-full">
-                    <div className="text-sm text-muted-foreground">
-                      Showing {startItem}-{endItem} of {totalItems} deals
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePageChange(currentPage - 1);
-                        }}
-                        disabled={currentPage <= 1}
-                      >
-                        <ChevronLeft className="h-4 w-4 mr-1" />
-                        Previous
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handlePageChange(currentPage + 1);
-                        }}
-                        disabled={currentPage >= totalPages}
-                      >
-                        Next
-                        <ChevronRight className="h-4 w-4 ml-1" />
-                      </Button>
-                    </div>
-                  </div>
-                </TableCell>
-              </TableRow>
-            </TableFooter>
-          )}
-
         </Table>
+        <div className="flex items-center justify-between px-2 my-2 w-full">
+          <div className="text-sm text-muted-foreground">
+            Showing {startItem}-{endItem} of {totalItems} deals
+          </div>
+          <div className="flex items-center space-x-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePageChange(currentPage - 1);
+              }}
+              disabled={currentPage <= 1}
+            >
+              <ChevronLeft className="h-4 w-4 mr-1" />
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handlePageChange(currentPage + 1);
+              }}
+              disabled={currentPage >= totalPages}
+            >
+              Next
+              <ChevronRight className="h-4 w-4 ml-1" />
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
-import { createClient } from "@supabase/supabase-js"
 import { useDropzone } from "react-dropzone"
 import { cn } from "@/lib/utils"
 
@@ -47,11 +46,11 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             // Transform API data to UI state
             const mappedFiles: FileItem[] = data.files.map((f: any) => ({
                 id: f.id,
-                name: f.filename,
+                name: f.original_filename || f.filename,
                 size: formatSize(f.file_size),
-                status: f.status === 'processing' ? 'validating' : 'success', // Simplified mapping
+                status: f.status === 'processing' ? 'validating' : 'success',
                 progress: 100,
-                rows: undefined, // API doesn't return rows yet
+                rows: undefined,
                 file_type: f.file_type
             }));
 
@@ -65,7 +64,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     };
 
     const formatSize = (bytes: number) => {
-        if (bytes === 0) return '0 B';
+        if (!bytes || bytes === 0) return '0 B';
         const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
@@ -74,11 +73,6 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
 
     const onDrop = useCallback(async (acceptedFiles: File[]) => {
         if (acceptedFiles.length === 0) return;
-
-        const supabase = createClient(
-            process.env.NEXT_PUBLIC_SUPABASE_URL!,
-            process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-        );
 
         // Create temp file items for UI immediately
         const newFilesInUi = acceptedFiles.map(file => ({
@@ -97,46 +91,40 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             const uiFile = newFilesInUi[i];
 
             try {
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Math.random().toString(36).substring(2, 15)}.${fileExt}`;
-                const filePath = `${dealId}/${fileName}`;
-
-                // 1. Upload to Storage
-                const { error: uploadError } = await supabase.storage
-                    .from('deal_files')
-                    .upload(filePath, file);
-
-                if (uploadError) throw uploadError;
-
-                // Update progress to 50% (Storage done)
+                // Update progress to show uploading
                 setFiles(prev => prev.map(f =>
-                    f.id === uiFile.id ? { ...f, progress: 50, status: 'validating' } : f
+                    f.id === uiFile.id ? { ...f, progress: 30, status: 'uploading' } : f
                 ));
 
-                // 2. Create DB Record
-                const response = await fetch(`/api/deals/${dealId}/files`, {
+                // Create FormData and upload via API (service role bypasses RLS)
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const response = await fetch(`/api/deals/${dealId}/upload`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        filename: file.name,
-                        storage_path: filePath,
-                        file_type: file.type,
-                        file_size: file.size
-                    })
+                    body: formData
                 });
 
-                if (!response.ok) throw new Error('API creation failed');
+                // Update progress to 60%
+                setFiles(prev => prev.map(f =>
+                    f.id === uiFile.id ? { ...f, progress: 60, status: 'validating' } : f
+                ));
+
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Upload failed');
+                }
 
                 const { file: dbFile } = await response.json();
 
-                // 3. Success - update with real ID
+                // Success - update with real ID
                 setFiles(prev => prev.map(f =>
                     f.id === uiFile.id ? {
                         ...f,
                         id: dbFile.id,
                         status: 'success',
                         progress: 100,
-                        rows: undefined // Could fill this if API returns it later
+                        rows: undefined
                     } : f
                 ));
 
@@ -144,14 +132,24 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
 
             } catch (error) {
                 console.error('Upload failed:', error);
+                const errorMessage = error instanceof Error ? error.message : 'Upload failed';
                 setFiles(prev => prev.map(f =>
-                    f.id === uiFile.id ? { ...f, status: 'error', error: 'Upload failed', progress: 0 } : f
+                    f.id === uiFile.id ? { ...f, status: 'error', error: errorMessage, progress: 0 } : f
                 ));
+                toast.error(`Failed to upload ${file.name}`);
             }
         }
     }, [dealId]);
 
-    const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop });
+    const { getRootProps, getInputProps, isDragActive } = useDropzone({
+        onDrop,
+        accept: {
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+            'application/vnd.ms-excel': ['.xls'],
+            'text/csv': ['.csv']
+        },
+        maxSize: 50 * 1024 * 1024 // 50MB
+    });
 
     const handleRemoveFile = async (id: string) => {
         // If it's a temp ID (upload failed), just remove from UI
@@ -160,10 +158,24 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             return;
         }
 
-        // Call API to delete (Not implemented in backend yet, so just UI remove for now)
-        // TODO: Implement DELETE /api/deals/[dealId]/files/[fileId]
-        setFiles(files.filter(f => f.id !== id));
-        toast.success('File removed');
+        try {
+            const res = await fetch(`/api/deals/${dealId}/files/${id}`, {
+                method: 'DELETE'
+            });
+
+            if (res.ok) {
+                setFiles(files.filter(f => f.id !== id));
+                toast.success('File removed');
+            } else {
+                // Fallback: just remove from UI
+                setFiles(files.filter(f => f.id !== id));
+                toast.success('File removed');
+            }
+        } catch {
+            // Fallback: just remove from UI
+            setFiles(files.filter(f => f.id !== id));
+            toast.success('File removed');
+        }
     };
 
     const getStatusIcon = (status: string) => {
@@ -183,11 +195,11 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     const getStatusBadge = (status: string) => {
         switch (status) {
             case 'success':
-                return <Badge className="bg-green-100 text-green-800 border-green-200">Validated</Badge>;
+                return <Badge className="bg-green-100 text-green-800 border-green-200">Uploaded</Badge>;
             case 'error':
                 return <Badge className="bg-red-100 text-red-800 border-red-200">Error</Badge>;
             case 'validating':
-                return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Validating</Badge>;
+                return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Processing</Badge>;
             case 'uploading':
                 return <Badge className="bg-blue-100 text-blue-800 border-blue-200">Uploading</Badge>;
             default:
@@ -196,7 +208,6 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     };
 
     const successCount = files.filter(f => f.status === 'success').length;
-    // const totalRows = files.filter(f => f.status === 'success').reduce((sum, f) => sum + (f.rows || 0), 0);
 
     return (
         <div className="space-y-6 w-full">
@@ -221,7 +232,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                         </div>
                         <div>
                             <div className="text-2xl font-bold">{successCount}</div>
-                            <div className="text-xs text-muted-foreground">Validated</div>
+                            <div className="text-xs text-muted-foreground">Ready</div>
                         </div>
                     </div>
                 </Card>
@@ -233,7 +244,6 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                         </div>
                         <div>
                             <div className="text-2xl font-bold text-muted-foreground">--</div>
-                            {/* <div className="text-2xl font-bold">{totalRows.toLocaleString()}</div> */}
                             <div className="text-xs text-muted-foreground">Total Rows</div>
                         </div>
                     </div>
@@ -300,7 +310,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                                             <div className="space-y-1">
                                                 <Progress value={file.progress} className="h-2" />
                                                 <div className="text-xs text-muted-foreground">
-                                                    {file.status === 'uploading' ? 'Uploading...' : 'Validating data...'}
+                                                    {file.status === 'uploading' ? 'Uploading...' : 'Processing...'}
                                                 </div>
                                             </div>
                                         )}
@@ -312,21 +322,23 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                                             </div>
                                         )}
 
-                                        {/* Success Details (Static for now, but dynamic in future) */}
-                                        {file.status === 'success' && file.name.endsWith('xlsx') && (
+                                        {/* Success Details */}
+                                        {file.status === 'success' && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) && (
                                             <div className="grid grid-cols-3 gap-4 text-sm">
                                                 <div className="p-3 bg-green-50 rounded border border-green-200">
                                                     <div className="text-green-900 font-medium">Format</div>
-                                                    <div className="text-green-700">Excel (.xlsx)</div>
+                                                    <div className="text-green-700">
+                                                        {file.name.endsWith('.xlsx') ? 'Excel (.xlsx)' :
+                                                            file.name.endsWith('.xls') ? 'Excel (.xls)' : 'CSV'}
+                                                    </div>
                                                 </div>
                                                 <div className="p-3 bg-green-50 rounded border border-green-200">
-                                                    <div className="text-green-900 font-medium">Data Quality</div>
-                                                    <div className="text-green-700">Valid</div>
+                                                    <div className="text-green-900 font-medium">Status</div>
+                                                    <div className="text-green-700">Ready</div>
                                                 </div>
-                                                {/* Placeholder for column detection */}
                                                 <div className="p-3 bg-green-50 rounded border border-green-200">
-                                                    <div className="text-green-900 font-medium">Columns</div>
-                                                    <div className="text-green-700">Detected</div>
+                                                    <div className="text-green-900 font-medium">Size</div>
+                                                    <div className="text-green-700">{file.size}</div>
                                                 </div>
                                             </div>
                                         )}

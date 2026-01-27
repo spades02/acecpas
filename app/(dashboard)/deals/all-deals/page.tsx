@@ -22,10 +22,10 @@ export default async function AllDealsPage({
       <DealsStats {...stats} />
 
       {/* 3. Render Table */}
-      <DealsTable 
-        data={deals} 
+      <DealsTable
+        data={deals}
         // Pass the raw count so the table can calculate "Showing 1-3 of 10"
-        totalItems={pagination.totalCount} 
+        totalItems={pagination.totalCount}
         itemsPerPage={pagination.limit}
         currentPage={pagination.currentPage}
         viewMode="detailed"
