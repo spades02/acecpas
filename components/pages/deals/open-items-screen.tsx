@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { AlertCircle, AlertTriangle, Info, Flag, Loader2, Plus, Send, Link, CheckCircle, MoreVertical, Trash2 } from "lucide-react"
+import { AlertCircle, AlertTriangle, Info, Flag, Loader2, Plus, Send, Link, CheckCircle, MoreVertical, Trash2, Mail, Copy } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -65,8 +65,11 @@ export function OpenItemsScreen({ dealId, onNavigate }: OpenItemsScreenProps) {
     const [newContext, setNewContext] = useState('')
     const [newPriority, setNewPriority] = useState(5)
     const [clientEmail, setClientEmail] = useState('')
+    const [clientName, setClientName] = useState('')
     const [creating, setCreating] = useState(false)
     const [generatingLink, setGeneratingLink] = useState(false)
+    const [sendingEmail, setSendingEmail] = useState(false)
+    const [emailSent, setEmailSent] = useState(false)
 
     // Fetch open items from database
     useEffect(() => {
@@ -207,6 +210,53 @@ export function OpenItemsScreen({ dealId, onNavigate }: OpenItemsScreenProps) {
             toast.error('Failed to generate link')
         } finally {
             setGeneratingLink(false)
+        }
+    }
+
+    async function handleSendEmail() {
+        if (selectedItems.length === 0) {
+            toast.error('Select at least one item')
+            return
+        }
+
+        if (!clientEmail?.trim()) {
+            toast.error('Client email is required')
+            return
+        }
+
+        try {
+            setSendingEmail(true)
+            const res = await fetch('/api/send-portal-link', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    dealId,
+                    openItemIds: selectedItems,
+                    clientEmail,
+                    clientName: clientName || null,
+                    expiresInDays: 7
+                })
+            })
+
+            const data = await res.json()
+
+            if (data.success) {
+                setGeneratedLink(data.link.portalUrl)
+                setEmailSent(data.emailSent)
+                if (data.emailSent) {
+                    toast.success(`Email sent to ${clientEmail}!`)
+                } else {
+                    toast.warning('Link created but email failed. You can copy it manually.')
+                }
+                fetchItems() // Refresh to show updated status
+            } else {
+                toast.error(data.error || 'Failed to send email')
+            }
+        } catch (error) {
+            console.error('Error sending email:', error)
+            toast.error('Failed to send email')
+        } finally {
+            setSendingEmail(false)
         }
     }
 
@@ -568,62 +618,111 @@ export function OpenItemsScreen({ dealId, onNavigate }: OpenItemsScreenProps) {
                 </DialogContent>
             </Dialog>
 
-            {/* Generate Link Dialog */}
+            {/* Send to Client Dialog */}
             <Dialog open={showLinkDialog} onOpenChange={(open) => {
                 setShowLinkDialog(open)
                 if (!open) {
                     setGeneratedLink(null)
                     setClientEmail('')
+                    setClientName('')
+                    setEmailSent(false)
                 }
             }}>
-                <DialogContent>
+                <DialogContent className="sm:max-w-[500px]">
                     <DialogHeader>
-                        <DialogTitle>
-                            {generatedLink ? 'Link Generated!' : 'Send to Client'}
+                        <DialogTitle className="flex items-center gap-2">
+                            {generatedLink ? (
+                                <><CheckCircle className="w-5 h-5 text-green-600" /> {emailSent ? 'Email Sent!' : 'Link Ready!'}</>
+                            ) : (
+                                <><Send className="w-5 h-5" /> Send to Client</>
+                            )}
                         </DialogTitle>
                     </DialogHeader>
 
                     {!generatedLink ? (
                         <>
                             <div className="space-y-4 py-4">
-                                <div className="text-sm text-muted-foreground">
-                                    Generate a secure link for your client to respond to {selectedItems.length} open item(s).
+                                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                                    <div className="flex items-center gap-2 text-blue-800 font-medium mb-1">
+                                        <Mail className="w-4 h-4" />
+                                        {selectedItems.length} item{selectedItems.length > 1 ? 's' : ''} selected
+                                    </div>
+                                    <p className="text-sm text-blue-700">
+                                        Your client will receive a secure link to respond to these questions.
+                                    </p>
                                 </div>
+
                                 <div className="space-y-2">
-                                    <label className="text-sm font-medium">Client Email (Optional)</label>
+                                    <label className="text-sm font-medium">Client Email *</label>
                                     <Input
                                         type="email"
                                         placeholder="client@company.com"
                                         value={clientEmail}
                                         onChange={(e) => setClientEmail(e.target.value)}
                                     />
+                                </div>
+
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium">Client Name (Optional)</label>
+                                    <Input
+                                        type="text"
+                                        placeholder="John Smith"
+                                        value={clientName}
+                                        onChange={(e) => setClientName(e.target.value)}
+                                    />
                                     <p className="text-xs text-muted-foreground">
-                                        Email for tracking purposes only
+                                        Used to personalize the email greeting
                                     </p>
                                 </div>
                             </div>
-                            <DialogFooter>
-                                <Button variant="outline" onClick={() => setShowLinkDialog(false)}>
+                            <DialogFooter className="flex-col sm:flex-row gap-2">
+                                <Button variant="outline" onClick={() => setShowLinkDialog(false)} className="sm:mr-auto">
                                     Cancel
                                 </Button>
-                                <Button onClick={handleGenerateLink} disabled={generatingLink}>
-                                    {generatingLink ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                                    Generate Link
+                                <Button
+                                    variant="outline"
+                                    onClick={handleGenerateLink}
+                                    disabled={generatingLink || sendingEmail}
+                                >
+                                    {generatingLink ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Link className="w-4 h-4 mr-2" />}
+                                    Just Generate Link
+                                </Button>
+                                <Button
+                                    onClick={handleSendEmail}
+                                    disabled={!clientEmail?.trim() || sendingEmail || generatingLink}
+                                >
+                                    {sendingEmail ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Mail className="w-4 h-4 mr-2" />}
+                                    Send Email
                                 </Button>
                             </DialogFooter>
                         </>
                     ) : (
                         <>
                             <div className="space-y-4 py-4">
-                                <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
-                                    <div className="flex items-center gap-2 text-green-800 font-medium mb-2">
-                                        <CheckCircle className="w-5 h-5" />
-                                        Link Ready
+                                {emailSent ? (
+                                    <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                                        <div className="flex items-center gap-2 text-green-800 font-medium mb-2">
+                                            <Mail className="w-5 h-5" />
+                                            Email Delivered
+                                        </div>
+                                        <p className="text-sm text-green-700">
+                                            The portal link has been sent to <strong>{clientEmail}</strong>.
+                                            The link expires in 7 days.
+                                        </p>
                                     </div>
-                                    <p className="text-sm text-green-700">
-                                        This link expires in 7 days.
-                                    </p>
-                                </div>
+                                ) : (
+                                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+                                        <div className="flex items-center gap-2 text-amber-800 font-medium mb-2">
+                                            <Link className="w-5 h-5" />
+                                            Link Generated
+                                        </div>
+                                        <p className="text-sm text-amber-700">
+                                            Copy the link below and send it to your client manually.
+                                            The link expires in 7 days.
+                                        </p>
+                                    </div>
+                                )}
+
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium">Portal Link</label>
                                     <div className="flex gap-2">
@@ -632,15 +731,23 @@ export function OpenItemsScreen({ dealId, onNavigate }: OpenItemsScreenProps) {
                                             readOnly
                                             className="font-mono text-xs"
                                         />
-                                        <Button onClick={copyLink}>Copy</Button>
+                                        <Button variant="outline" onClick={copyLink}>
+                                            <Copy className="w-4 h-4" />
+                                        </Button>
                                     </div>
+                                    <p className="text-xs text-muted-foreground">
+                                        You can also copy this link to share via other channels
+                                    </p>
                                 </div>
                             </div>
                             <DialogFooter>
                                 <Button onClick={() => {
                                     setShowLinkDialog(false)
                                     setGeneratedLink(null)
+                                    setClientEmail('')
+                                    setClientName('')
                                     setSelectedItems([])
+                                    setEmailSent(false)
                                 }}>
                                     Done
                                 </Button>
