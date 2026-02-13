@@ -65,53 +65,50 @@ export function DealView({ deal }: DealViewProps) {
                 </div>
 
                 {/* --- STATS GRID --- */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                {/* <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
 
-                    {/* Card 1: Deal Type */}
-                    <Card className="p-5 border-l-4 border-l-green-600 bg-green-50/30">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-                                <DollarSign className="w-5 h-5 text-green-600" />
-                            </div>
-                            <div className="flex-1">
-                                <div className="text-xl font-bold text-foreground truncate">
-                                    {deal.deal_type}
+                        <Card className="p-5 border-l-4 border-l-green-600 bg-green-50/30">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
+                                    <DollarSign className="w-5 h-5 text-green-600" />
                                 </div>
-                                <Badge className="bg-green-100 text-green-800 text-xs mt-1 border-green-200">Deal Type</Badge>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold text-foreground truncate">
+                                        {deal.deal_type}
+                                    </div>
+                                    <Badge className="bg-green-100 text-green-800 text-xs mt-1 border-green-200">Deal Type</Badge>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
 
-                    {/* Card 2: Progress */}
-                    <Card className="p-5 border-l-4 border-l-amber-500 bg-amber-50/30">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
-                                <CheckCircle className="w-5 h-5 text-amber-600" />
-                            </div>
-                            <div className="flex-1">
-                                <div className="text-2xl font-bold text-foreground">
-                                    {deal.progress}%
+                        <Card className="p-5 border-l-4 border-l-amber-500 bg-amber-50/30">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-amber-100 rounded-lg flex items-center justify-center">
+                                    <CheckCircle className="w-5 h-5 text-amber-600" />
                                 </div>
-                                <Badge className="bg-amber-100 text-amber-800 text-xs mt-1 border-amber-200">Completion</Badge>
+                                <div className="flex-1">
+                                    <div className="text-2xl font-bold text-foreground">
+                                        {deal.progress}%
+                                    </div>
+                                    <Badge className="bg-amber-100 text-amber-800 text-xs mt-1 border-amber-200">Completion</Badge>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
+                        </Card>
 
-                    {/* Card 3: Target Close */}
-                    <Card className="p-5 border-l-4 border-l-blue-500 bg-blue-50/30">
-                        <div className="flex items-center gap-4">
-                            <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
-                                <Clock className="w-5 h-5 text-blue-600" />
-                            </div>
-                            <div className="flex-1">
-                                <div className="text-xl font-bold text-foreground">
-                                    {deal.target_close_date ? new Date(deal.target_close_date).toLocaleDateString() : 'TBD'}
+                        <Card className="p-5 border-l-4 border-l-blue-500 bg-blue-50/30">
+                            <div className="flex items-center gap-4">
+                                <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                                    <Clock className="w-5 h-5 text-blue-600" />
                                 </div>
-                                <Badge className="bg-blue-100 text-blue-800 text-xs mt-1 border-blue-200">Target Close</Badge>
+                                <div className="flex-1">
+                                    <div className="text-xl font-bold text-foreground">
+                                        {deal.target_close_date ? new Date(deal.target_close_date).toLocaleDateString() : 'TBD'}
+                                    </div>
+                                    <Badge className="bg-blue-100 text-blue-800 text-xs mt-1 border-blue-200">Target Close</Badge>
+                                </div>
                             </div>
-                        </div>
-                    </Card>
-                </div>
+                        </Card>
+                    </div> */}
             </div>
 
             {/* --- CONTENT AREA (Managed by 'view' State) --- */}

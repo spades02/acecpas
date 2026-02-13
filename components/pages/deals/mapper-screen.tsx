@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { CheckCircle, AlertTriangle, HelpCircle, Download, Check, Search, Loader2 } from "lucide-react"
+import { CheckCircle, AlertTriangle, HelpCircle, Download, Check, Search, Loader2, Zap, RefreshCw } from "lucide-react"
 import { Card } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -60,15 +60,17 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
     const [activeFilter, setActiveFilter] = useState<string>('all')
     const [searchQuery, setSearchQuery] = useState<string>('')
     const [approving, setApproving] = useState(false)
+    const [mapperRunning, setMapperRunning] = useState(false)
+    const [mapperStatus, setMapperStatus] = useState<{ progress_pct: number; total_accounts: number } | null>(null)
 
     // Fetch mappings and master COA
     useEffect(() => {
         fetchData()
     }, [dealId])
 
-    async function fetchData() {
+    async function fetchData(silent = false) {
         try {
-            setLoading(true)
+            if (!silent) setLoading(true)
 
             // Fetch mappings and master COA in parallel
             const [mappingsRes, coaRes] = await Promise.all([
@@ -90,8 +92,76 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
             console.error('Error fetching data:', error)
             toast.error('Failed to load mapping data')
         } finally {
-            setLoading(false)
+            if (!silent) setLoading(false)
         }
+    }
+
+    async function triggerMapper(reprocess: boolean = false) {
+        try {
+            setMapperRunning(true)
+            toast.info('Starting AI Account Mapping...', { duration: 3000 })
+
+            const res = await fetch('/api/mapper/trigger', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ dealId, reprocess })
+            })
+
+            const data = await res.json()
+
+            if (data.success) {
+                toast.success(data.message || 'Mapper triggered! Processing accounts...')
+                // Start polling for progress
+                pollMapperStatus()
+            } else {
+                toast.error(data.error || 'Failed to trigger mapper')
+                setMapperRunning(false)
+            }
+        } catch (error) {
+            console.error('Error triggering mapper:', error)
+            toast.error('Failed to trigger mapper')
+            setMapperRunning(false)
+        }
+    }
+
+    function pollMapperStatus() {
+        const interval = setInterval(async () => {
+            try {
+                const res = await fetch(`/api/mapper/trigger?dealId=${dealId}`)
+                const data = await res.json()
+
+                if (data.success) {
+                    setMapperStatus({
+                        progress_pct: data.progress_pct,
+                        total_accounts: data.total_accounts
+                    })
+
+                    // If we have mapped accounts, refresh the main data silently
+                    if (data.total_accounts > 0) {
+                        fetchData(true)
+                    }
+
+                    // If mapping looks complete (all accounts have been processed), stop polling
+                    if (data.total_accounts > 0 && data.unmapped === 0 && data.needs_review >= 0) {
+                        clearInterval(interval)
+                        setMapperRunning(false)
+                        setMapperStatus(null)
+                        toast.success(`Mapping complete! ${data.approved} auto-approved, ${data.needs_review} need review.`)
+                        fetchData(true)
+                    }
+                }
+            } catch (error) {
+                console.error('Error polling mapper status:', error)
+            }
+        }, 5000) // Poll every 5 seconds
+
+        // Safety timeout - stop polling after 5 minutes
+        setTimeout(() => {
+            clearInterval(interval)
+            setMapperRunning(false)
+            setMapperStatus(null)
+            fetchData(true)
+        }, 300000)
     }
 
     async function handleApprove(mappingId: string) {
@@ -242,23 +312,59 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
     // Show empty state if no client accounts exist
     if (mappings.length === 0) {
         return (
-            <div className="h-[calc(100vh-14rem)] flex flex-col items-center justify-center">
-                <Card className="p-12 text-center max-w-md">
-                    <HelpCircle className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold mb-2">No Client Accounts Found</h3>
-                    <p className="text-muted-foreground mb-4">
-                        Upload files and process them to extract client accounts for mapping.
+            <div className="h-full flex flex-col items-center justify-center">
+                <Card className="p-12 text-center max-w-lg border-2 border-dashed">
+                    <div className="w-16 h-16 mx-auto mb-6 bg-linear-to-br from-violet-100 to-indigo-100 rounded-2xl flex items-center justify-center">
+                        <Zap className="w-8 h-8 text-violet-600" />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">Ready to Map Accounts</h3>
+                    <p className="text-muted-foreground mb-6 leading-relaxed">
+                        {mapperRunning
+                            ? 'AI is analyzing your GL transactions and mapping accounts to the Chart of Accounts...'
+                            : 'Extract unique accounts from your GL data and let AI map them to your Chart of Accounts automatically.'
+                        }
                     </p>
-                    <Button onClick={() => onNavigate('files')}>
-                        Go to File Upload
-                    </Button>
+
+                    {mapperRunning ? (
+                        <div className="space-y-4">
+                            <div className="flex items-center justify-center gap-2 text-violet-600">
+                                <Loader2 className="w-5 h-5 animate-spin" />
+                                <span className="font-medium">Processing{mapperStatus ? ` (${mapperStatus.total_accounts} accounts)` : ''}...</span>
+                            </div>
+                            {mapperStatus && (
+                                <div className="w-full max-w-xs mx-auto">
+                                    <div className="bg-gray-200 rounded-full h-2">
+                                        <div
+                                            className="bg-linear-to-r from-violet-500 to-indigo-500 h-2 rounded-full transition-all duration-500"
+                                            style={{ width: `${mapperStatus.progress_pct}%` }}
+                                        />
+                                    </div>
+                                    <div className="text-xs text-muted-foreground mt-1">{mapperStatus.progress_pct}% complete</div>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col gap-3">
+                            <Button
+                                size="lg"
+                                className="bg-linear-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white shadow-lg"
+                                onClick={() => triggerMapper()}
+                            >
+                                <Zap className="w-5 h-5 mr-2" />
+                                Run AI Account Mapping
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => onNavigate('files')}>
+                                ← Back to File Upload
+                            </Button>
+                        </div>
+                    )}
                 </Card>
             </div>
         )
     }
 
     return (
-        <div className="h-[calc(100vh-14rem)] flex flex-col justify-between">
+        <div className="h-[calc(100vh-8rem)] flex flex-col justify-between">
             {/* Stats Header */}
             <div className="bg-white border-b border-border p-6 pr-12">
                 <div className="flex items-center justify-between mb-4">
@@ -314,95 +420,123 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
             </div>
 
             {/* Filter & Action Toolbar */}
-            <div className="flex items-center justify-between bg-white border-b border-border px-4 py-4">
+            <div className="flex items-center justify-between bg-white border-b border-border px-4 py-4 gap-4 overflow-x-auto">
                 {/* Left - Filters */}
-                <Button
-                    variant={activeFilter === 'all' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveFilter('all')}
-                >
-                    All ({mappings.length})
-                </Button>
-                <Button
-                    variant={activeFilter === 'high' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveFilter('high')}
-                >
-                    Approved ({stats.autoMapped})
-                </Button>
-                <Button
-                    variant={activeFilter === 'review' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveFilter('review')}
-                >
-                    Needs Review ({stats.needsReview})
-                </Button>
-                <Button
-                    variant={activeFilter === 'unmapped' ? 'default' : 'ghost'}
-                    size="sm"
-                    onClick={() => setActiveFilter('unmapped')}
-                >
-                    Unmapped ({stats.unmapped})
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                        variant={activeFilter === 'all' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setActiveFilter('all')}
+                    >
+                        All ({mappings.length})
+                    </Button>
+                    <Button
+                        variant={activeFilter === 'high' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setActiveFilter('high')}
+                    >
+                        Approved ({stats.autoMapped})
+                    </Button>
+                    <Button
+                        variant={activeFilter === 'review' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setActiveFilter('review')}
+                    >
+                        Needs Review ({stats.needsReview})
+                    </Button>
+                    <Button
+                        variant={activeFilter === 'unmapped' ? 'default' : 'ghost'}
+                        size="sm"
+                        onClick={() => setActiveFilter('unmapped')}
+                    >
+                        Unmapped ({stats.unmapped})
+                    </Button>
+                </div>
 
-                <div className="relative">
+                <div className="relative flex-1 max-w-sm min-w-[200px]">
                     <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                     <Input
                         placeholder="Search accounts..."
-                        className="pl-9 w-80 bg-muted"
+                        className="pl-9 bg-muted w-full"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
                     />
                 </div>
 
                 {/* Right - Actions */}
-                <Button variant="outline" size="sm">
-                    <Download className="w-4 h-4 mr-2" />
-                    Export to Excel
-                </Button>
-                <Button
-                    size="sm"
-                    onClick={handleBulkApprove}
-                    disabled={approving || stats.needsReview === 0}
-                >
-                    {approving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
-                    Auto-Approve High Confidence
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                    <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => triggerMapper(true)}
+                        disabled={mapperRunning}
+                    >
+                        {mapperRunning ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-2" />}
+                        Re-Run Mapper
+                    </Button>
+                    <Button variant="outline" size="sm">
+                        <Download className="w-4 h-4 mr-2" />
+                        Export
+                    </Button>
+                    <Button
+                        size="sm"
+                        onClick={handleBulkApprove}
+                        disabled={approving || stats.needsReview === 0}
+                    >
+                        {approving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
+                        Auto-Approve High Confidence
+                    </Button>
+                </div>
             </div>
 
             {/* Main Grid */}
-            <div className="flex-1 overflow-auto">
-                <div className="bg-white">
-                    <table className="w-full">
-                        <thead className="sticky top-0 bg-muted border-b border-border z-10">
-                            <tr>
-                                <th className="w-12 px-4 py-3">
-                                    <Checkbox />
-                                </th>
-                                <th className="w-12 px-2 py-3"></th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Original Account
-                                </th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Description
-                                </th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Transactions
-                                </th>
-                                <th className="w-8 px-2 py-3"></th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Mapped To
-                                </th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Confidence
-                                </th>
-                                <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3">
-                                    Actions
-                                </th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-border">
-                            {filteredMappings.map((mapping) => (
+            <div className="flex-1 overflow-auto bg-white min-h-0">
+                <table className="w-full relative border-collapse">
+                    <thead className="sticky top-0 bg-muted border-b border-border z-10 shadow-sm">
+                        <tr>
+                            <th className="w-12 px-4 py-3 bg-muted">
+                                <Checkbox />
+                            </th>
+                            <th className="w-8 px-2 py-3 bg-muted"></th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted">
+                                Original Account
+                            </th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted w-1/4">
+                                Description
+                            </th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted">
+                                Transactions
+                            </th>
+                            <th className="w-8 px-2 py-3 bg-muted"></th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted">
+                                Mapped To
+                            </th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted w-24">
+                                Confidence
+                            </th>
+                            <th className="text-left text-xs font-semibold text-muted-foreground uppercase px-4 py-3 bg-muted w-32">
+                                Actions
+                            </th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                        {loading && mappings.length === 0 ? (
+                            // Skeleton Rows
+                            Array.from({ length: 10 }).map((_, i) => (
+                                <tr key={i} className="animate-pulse">
+                                    <td className="px-4 py-3"><div className="h-4 w-4 bg-muted rounded" /></td>
+                                    <td className="px-2 py-3"><div className="h-2 w-2 bg-muted rounded-full" /></td>
+                                    <td className="px-4 py-3"><div className="h-4 w-32 bg-muted rounded" /></td>
+                                    <td className="px-4 py-3"><div className="h-4 w-48 bg-muted rounded" /></td>
+                                    <td className="px-4 py-3"><div className="h-4 w-16 bg-muted rounded" /></td>
+                                    <td className="px-2 py-3"></td>
+                                    <td className="px-4 py-3"><div className="h-6 w-24 bg-muted rounded-full" /></td>
+                                    <td className="px-4 py-3"><div className="h-6 w-12 bg-muted rounded-full" /></td>
+                                    <td className="px-4 py-3"><div className="h-8 w-20 bg-muted rounded" /></td>
+                                </tr>
+                            ))
+                        ) : (
+                            filteredMappings.map((mapping) => (
                                 <tr
                                     key={mapping.id}
                                     className={`hover:bg-muted/50 cursor-pointer transition-colors ${selectedRow?.id === mapping.id ? 'bg-blue-50' : ''
@@ -426,15 +560,17 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                     <td className="px-2 py-3">
                                         {getStatusIcon(mapping.status)}
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="font-medium text-foreground">{mapping.originalAccount}</div>
+                                    <td className="px-4 py-3 max-w-[200px]">
+                                        <div className="font-medium text-foreground truncate" title={mapping.originalAccount}>
+                                            {mapping.originalAccount}
+                                        </div>
                                     </td>
-                                    <td className="px-4 py-3">
-                                        <div className="text-sm text-muted-foreground">
+                                    <td className="px-4 py-3 max-w-[300px]">
+                                        <div className="text-sm text-muted-foreground truncate" title={mapping.description || ''}>
                                             {mapping.description || <span className="text-gray-300">—</span>}
                                         </div>
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 whitespace-nowrap">
                                         <div className="text-sm text-muted-foreground">
                                             {mapping.transactionCount > 0 ? (
                                                 <span>{mapping.transactionCount} txns</span>
@@ -456,7 +592,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                                 {mapping.mappedTo}
                                             </Badge>
                                         ) : (
-                                            <span className="text-sm text-red-600 border border-dashed border-red-300 px-2 py-1 rounded">
+                                            <span className="text-sm text-red-600 border border-dashed border-red-300 px-2 py-1 rounded whitespace-nowrap">
                                                 Select Category...
                                             </span>
                                         )}
@@ -466,7 +602,7 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                             <Badge className="bg-gray-100 text-gray-500 border-gray-200">N/A</Badge>
                                         )}
                                     </td>
-                                    <td className="px-4 py-3">
+                                    <td className="px-4 py-3 whitespace-nowrap">
                                         {mapping.status === 'auto-approved' ? (
                                             <span className="text-sm text-green-600 font-medium flex items-center gap-1">
                                                 <Check className="w-4 h-4" /> Approved
@@ -498,14 +634,15 @@ export function MapperScreen({ dealId, onNavigate }: MapperScreenProps) {
                                         )}
                                     </td>
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            ))
+                        )}
+                    </tbody>
+                </table>
             </div>
 
             {/* Bottom Status Bar */}
-            <div className="bg-muted border-t border-border px-6 py-3 flex items-center justify-between">
+            <div className="bg-muted border-t border-border px-6 py-3 flex items-center justify-between shrink-0">
+                {/* ... existing footer content ... */}
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                     {stats.needsReview + stats.unmapped > 0 ? (
                         <>

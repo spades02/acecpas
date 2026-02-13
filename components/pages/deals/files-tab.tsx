@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback } from 'react';
-import { Upload, File, CheckCircle2, XCircle, AlertCircle, FileSpreadsheet, Trash2, ArrowRight } from 'lucide-react';
+import { Upload, File as FileIcon, CheckCircle2, XCircle, AlertCircle, FileSpreadsheet, Trash2, ArrowRight, Loader2 } from 'lucide-react';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -9,6 +9,14 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useDropzone } from "react-dropzone"
 import { cn } from "@/lib/utils"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+    Select,
+    SelectContent,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 
 interface FilesTabProps {
     dealId: string;
@@ -29,6 +37,10 @@ interface FileItem {
 export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     const [files, setFiles] = useState<FileItem[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedIds, setSelectedIds] = useState<string[]>([]);
+    const [deletingIds, setDeletingIds] = useState<string[]>([]);
+    const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [selectedFileType, setSelectedFileType] = useState<string>("gl_detail");
 
     // Initial fetch of files
     useEffect(() => {
@@ -38,17 +50,18 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     const fetchFiles = async () => {
         try {
             setLoading(true);
-            const res = await fetch(`/api/deals/${dealId}/files`);
+            const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+            const res = await fetch(`${backendUrl}/api/v1/deals/${dealId}/files`);
             if (!res.ok) throw new Error('Failed to fetch files');
 
             const data = await res.json();
 
             // Transform API data to UI state
-            const mappedFiles: FileItem[] = data.files.map((f: any) => ({
+            const mappedFiles: FileItem[] = data.map((f: any) => ({
                 id: f.id,
                 name: f.original_filename || f.filename,
-                size: formatSize(f.file_size),
-                status: f.status === 'processing' ? 'validating' : 'success',
+                size: formatSize(f.file_size_bytes || f.file_size),
+                status: f.status === 'processing' ? 'validating' : f.status === 'completed' ? 'success' : 'success', // Treat pending as success for now
                 progress: 100,
                 rows: undefined,
                 file_type: f.file_type
@@ -91,31 +104,53 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             const uiFile = newFilesInUi[i];
 
             try {
-                // Update progress to show uploading
-                setFiles(prev => prev.map(f =>
-                    f.id === uiFile.id ? { ...f, progress: 30, status: 'uploading' } : f
-                ));
-
-                // Create FormData and upload via API (service role bypasses RLS)
+                // Create XHR for tracking progress
+                const xhr = new XMLHttpRequest();
                 const formData = new FormData();
                 formData.append('file', file);
 
-                const response = await fetch(`/api/deals/${dealId}/upload`, {
-                    method: 'POST',
-                    body: formData
+                const uploadPromise = new Promise<any>((resolve, reject) => {
+                    xhr.upload.addEventListener('progress', (event) => {
+                        if (event.lengthComputable) {
+                            const percentComplete = (event.loaded / event.total) * 100;
+                            // Cap at 90% until server confirms
+                            const smoothProgress = Math.min(percentComplete, 95);
+
+                            setFiles(prev => prev.map(f =>
+                                f.id === uiFile.id ? {
+                                    ...f,
+                                    progress: smoothProgress,
+                                    status: smoothProgress >= 95 ? 'validating' : 'uploading'
+                                } : f
+                            ));
+                        }
+                    });
+
+                    xhr.addEventListener('load', () => {
+                        if (xhr.status >= 200 && xhr.status < 300) {
+                            try {
+                                const response = JSON.parse(xhr.responseText);
+                                resolve(response);
+                            } catch (e) {
+                                reject(new Error('Invalid response'));
+                            }
+                        } else {
+                            try {
+                                const error = JSON.parse(xhr.responseText);
+                                reject(new Error(error.error || 'Upload failed'));
+                            } catch {
+                                reject(new Error('Upload failed'));
+                            }
+                        }
+                    });
+
+                    xhr.addEventListener('error', () => reject(new Error('Network error')));
+                    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+                    xhr.open('POST', `${backendUrl}/api/v1/deals/${dealId}/files?file_type=${selectedFileType}`);
+                    xhr.send(formData);
                 });
 
-                // Update progress to 60%
-                setFiles(prev => prev.map(f =>
-                    f.id === uiFile.id ? { ...f, progress: 60, status: 'validating' } : f
-                ));
-
-                if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error || 'Upload failed');
-                }
-
-                const { file: dbFile } = await response.json();
+                const dbFile = await uploadPromise;
 
                 // Success - update with real ID
                 setFiles(prev => prev.map(f =>
@@ -151,12 +186,16 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
         maxSize: 50 * 1024 * 1024 // 50MB
     });
 
-    const handleRemoveFile = async (id: string) => {
+    const handleDelete = async (id: string, event?: React.MouseEvent) => {
+        if (event) event.stopPropagation();
+
         // If it's a temp ID (upload failed), just remove from UI
         if (id.length < 10) {
-            setFiles(files.filter(f => f.id !== id));
+            setFiles(prev => prev.filter(f => f.id !== id));
             return;
         }
+
+        setDeletingIds(prev => [...prev, id]);
 
         try {
             const res = await fetch(`/api/deals/${dealId}/files/${id}`, {
@@ -164,17 +203,46 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             });
 
             if (res.ok) {
-                setFiles(files.filter(f => f.id !== id));
+                setFiles(prev => prev.filter(f => f.id !== id));
+                setSelectedIds(prev => prev.filter(sid => sid !== id));
                 toast.success('File removed');
             } else {
-                // Fallback: just remove from UI
-                setFiles(files.filter(f => f.id !== id));
-                toast.success('File removed');
+                toast.error('Failed to remove file');
             }
         } catch {
-            // Fallback: just remove from UI
-            setFiles(files.filter(f => f.id !== id));
-            toast.success('File removed');
+            toast.error('Error removing file');
+        } finally {
+            setDeletingIds(prev => prev.filter(did => did !== id));
+        }
+    };
+
+    const handleBulkDelete = async () => {
+        const idsToDelete = selectedIds.length > 0 ? selectedIds : files.map(f => f.id);
+
+        if (idsToDelete.length === 0) return;
+
+        if (!confirm(`Are you sure you want to delete ${idsToDelete.length} files?`)) return;
+
+        setIsBulkDeleting(true);
+        setDeletingIds(idsToDelete);
+
+        try {
+            // Since we don't have a bulk delete endpoint, we'll do it in parallel
+            await Promise.all(idsToDelete.map(id =>
+                fetch(`/api/deals/${dealId}/files/${id}`, { method: 'DELETE' })
+            ));
+
+            setFiles(prev => prev.filter(f => !idsToDelete.includes(f.id)));
+            setSelectedIds([]);
+            toast.success(`Deleted ${idsToDelete.length} files`);
+        } catch (error) {
+            console.error('Bulk delete failed:', error);
+            toast.error('Some files could not be deleted');
+            // Refresh logic to ensure state matches server
+            fetchFiles();
+        } finally {
+            setIsBulkDeleting(false);
+            setDeletingIds([]);
         }
     };
 
@@ -188,7 +256,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
             case 'validating':
                 return <AlertCircle className="w-5 h-5 text-blue-600 animate-pulse" />;
             default:
-                return <File className="w-5 h-5 text-muted-foreground" />;
+                return <FileIcon className="w-5 h-5 text-muted-foreground" />;
         }
     };
 
@@ -208,6 +276,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
     };
 
     const successCount = files.filter(f => f.status === 'success').length;
+    const allSelected = files.length > 0 && selectedIds.length === files.length;
 
     return (
         <div className="space-y-6 w-full">
@@ -240,7 +309,7 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                 <Card className="p-6">
                     <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
-                            <File className="w-6 h-6 text-blue-600" />
+                            <FileIcon className="w-6 h-6 text-blue-600" />
                         </div>
                         <div>
                             <div className="text-2xl font-bold text-muted-foreground">--</div>
@@ -248,6 +317,22 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                         </div>
                     </div>
                 </Card>
+            </div>
+
+            {/* File Type Selection */}
+            <div className="flex items-center gap-4">
+                <div className="text-sm font-medium">File Type:</div>
+                <Select value={selectedFileType} onValueChange={setSelectedFileType}>
+                    <SelectTrigger className="w-[200px]">
+                        <SelectValue placeholder="Select file type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="monthly_pl">Monthly P&L</SelectItem>
+                        <SelectItem value="monthly_bs">Monthly Balance Sheet</SelectItem>
+                        <SelectItem value="gl_detail">GL Detail</SelectItem>
+                        <SelectItem value="trial_balance">Trial Balance</SelectItem>
+                    </SelectContent>
+                </Select>
             </div>
 
             {/* Upload Zone */}
@@ -277,85 +362,151 @@ export function FilesTab({ dealId, onNavigate }: FilesTabProps) {
                 </div>
             </Card>
 
-            {/* Uploaded Files */}
+            {/* Uploaded Files List */}
             {files.length > 0 && (
                 <Card>
-                    <div className="p-6 border-b">
-                        <h3 className="font-semibold">Uploaded Files ({files.length})</h3>
+                    <div className="p-4 border-b flex items-center justify-between bg-muted/40">
+                        <div className="flex items-center gap-4">
+                            <Checkbox
+                                checked={allSelected}
+                                onCheckedChange={(checked) => {
+                                    if (checked) {
+                                        setSelectedIds(files.map(f => f.id));
+                                    } else {
+                                        setSelectedIds([]);
+                                    }
+                                }}
+                            />
+                            <h3 className="font-semibold text-sm">
+                                {selectedIds.length > 0 ? `${selectedIds.length} Selected` : `Uploaded Files (${files.length})`}
+                            </h3>
+                        </div>
+
+                        {(selectedIds.length > 0 || files.length > 0) && (
+                            <Button
+                                variant={selectedIds.length > 0 ? "destructive" : "outline"}
+                                size="sm"
+                                onClick={handleBulkDelete}
+                                disabled={isBulkDeleting}
+                            >
+                                {isBulkDeleting ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Trash2 className="w-4 h-4 mr-2" />}
+                                {selectedIds.length > 0 ? `Delete Selected (${selectedIds.length})` : "Delete All"}
+                            </Button>
+                        )}
                     </div>
 
-                    <div className="divide-y">
-                        {files.map((file) => (
-                            <div key={file.id} className="p-6 hover:bg-muted/50 transition-colors">
-                                <div className="flex items-start gap-4">
-                                    {/* Icon */}
-                                    <div className="mt-1">
-                                        {getStatusIcon(file.status)}
-                                    </div>
-
-                                    {/* File Info */}
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className="font-medium text-foreground truncate">{file.name}</div>
-                                            {getStatusBadge(file.status)}
+                    <div className="divide-y max-h-[500px] overflow-auto">
+                        {files.map((file) => {
+                            const isDeleting = deletingIds.includes(file.id);
+                            return (
+                                <div
+                                    key={file.id}
+                                    className={cn(
+                                        "p-6 hover:bg-muted/50 transition-colors cursor-pointer",
+                                        selectedIds.includes(file.id) && "bg-muted/30"
+                                    )}
+                                    onClick={() => {
+                                        if (selectedIds.includes(file.id)) {
+                                            setSelectedIds(prev => prev.filter(id => id !== file.id));
+                                        } else {
+                                            setSelectedIds(prev => [...prev, file.id]);
+                                        }
+                                    }}
+                                >
+                                    <div className="flex items-start gap-4">
+                                        <div className="flex items-center h-full pt-1" onClick={e => e.stopPropagation()}>
+                                            <Checkbox
+                                                checked={selectedIds.includes(file.id)}
+                                                onCheckedChange={(checked) => {
+                                                    if (checked) {
+                                                        setSelectedIds(prev => [...prev, file.id]);
+                                                    } else {
+                                                        setSelectedIds(prev => prev.filter(id => id !== file.id));
+                                                    }
+                                                }}
+                                            />
                                         </div>
 
-                                        <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
-                                            <span>{file.size}</span>
-                                            {file.rows && <span>{file.rows.toLocaleString()} rows detected</span>}
+                                        {/* Icon */}
+                                        <div className="mt-1">
+                                            {getStatusIcon(file.status)}
                                         </div>
 
-                                        {/* Progress Bar */}
-                                        {(file.status === 'uploading' || file.status === 'validating') && (
-                                            <div className="space-y-1">
-                                                <Progress value={file.progress} className="h-2" />
-                                                <div className="text-xs text-muted-foreground">
-                                                    {file.status === 'uploading' ? 'Uploading...' : 'Processing...'}
-                                                </div>
+                                        {/* File Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className="font-medium text-foreground truncate">{file.name}</div>
+                                                {getStatusBadge(file.status)}
                                             </div>
-                                        )}
 
-                                        {/* Error Message */}
-                                        {file.status === 'error' && file.error && (
-                                            <div className="text-sm text-red-600 bg-red-50 p-3 rounded border border-red-200">
-                                                {file.error}
+                                            <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
+                                                <span>{file.size}</span>
+                                                {file.rows && <span>{file.rows.toLocaleString()} rows detected</span>}
                                             </div>
-                                        )}
 
-                                        {/* Success Details */}
-                                        {file.status === 'success' && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) && (
-                                            <div className="grid grid-cols-3 gap-4 text-sm">
-                                                <div className="p-3 bg-green-50 rounded border border-green-200">
-                                                    <div className="text-green-900 font-medium">Format</div>
-                                                    <div className="text-green-700">
-                                                        {file.name.endsWith('.xlsx') ? 'Excel (.xlsx)' :
-                                                            file.name.endsWith('.xls') ? 'Excel (.xls)' : 'CSV'}
+                                            {/* Progress Bar */}
+                                            {(file.status === 'uploading' || file.status === 'validating') && (
+                                                <div className="space-y-1">
+                                                    <Progress value={file.progress} className="h-2" />
+                                                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                                                        <span>
+                                                            {file.status === 'uploading'
+                                                                ? `Uploading ${Math.round(file.progress)}%`
+                                                                : 'Processing on server...'}
+                                                        </span>
+                                                        {file.status === 'uploading' && (
+                                                            <span>{Math.round(file.progress)}%</span>
+                                                        )}
                                                     </div>
                                                 </div>
-                                                <div className="p-3 bg-green-50 rounded border border-green-200">
-                                                    <div className="text-green-900 font-medium">Status</div>
-                                                    <div className="text-green-700">Ready</div>
-                                                </div>
-                                                <div className="p-3 bg-green-50 rounded border border-green-200">
-                                                    <div className="text-green-900 font-medium">Size</div>
-                                                    <div className="text-green-700">{file.size}</div>
-                                                </div>
-                                            </div>
-                                        )}
-                                    </div>
+                                            )}
 
-                                    {/* Actions */}
-                                    <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        onClick={() => handleRemoveFile(file.id)}
-                                        disabled={file.status === 'uploading' || file.status === 'validating'}
-                                    >
-                                        <Trash2 className="w-4 h-4 text-red-600" />
-                                    </Button>
+                                            {/* Error Message */}
+                                            {file.status === 'error' && file.error && (
+                                                <div className="text-sm text-red-600 bg-red-50 p-3 rounded border border-red-200">
+                                                    {file.error}
+                                                </div>
+                                            )}
+
+                                            {/* Success Details */}
+                                            {file.status === 'success' && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls') || file.name.endsWith('.csv')) && (
+                                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                                    <div className="p-3 bg-green-50 rounded border border-green-200">
+                                                        <div className="text-green-900 font-medium">Format</div>
+                                                        <div className="text-green-700">
+                                                            {file.name.endsWith('.xlsx') ? 'Excel (.xlsx)' :
+                                                                file.name.endsWith('.xls') ? 'Excel (.xls)' : 'CSV'}
+                                                        </div>
+                                                    </div>
+                                                    <div className="p-3 bg-green-50 rounded border border-green-200">
+                                                        <div className="text-green-900 font-medium">Status</div>
+                                                        <div className="text-green-700">Ready</div>
+                                                    </div>
+                                                    <div className="p-3 bg-green-50 rounded border border-green-200">
+                                                        <div className="text-green-900 font-medium">Size</div>
+                                                        <div className="text-green-700">{file.size}</div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Actions */}
+                                        <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={(e) => handleDelete(file.id, e)}
+                                            disabled={file.status === 'uploading' || file.status === 'validating' || isDeleting}
+                                        >
+                                            {isDeleting ? (
+                                                <Loader2 className="w-4 h-4 animate-spin text-red-600" />
+                                            ) : (
+                                                <Trash2 className="w-4 h-4 text-red-600" />
+                                            )}
+                                        </Button>
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </Card>
             )}

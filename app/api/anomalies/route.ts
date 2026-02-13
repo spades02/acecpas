@@ -1,5 +1,5 @@
-import { createClient } from '@supabase/supabase-js'
 import { Auth0Client } from '@auth0/nextjs-auth0/server'
+import { createClient } from '@supabase/supabase-js'
 import { NextRequest, NextResponse } from 'next/server'
 
 const supabase = createClient(
@@ -13,272 +13,232 @@ async function getOrganizationId(): Promise<string | null> {
     try {
         const session = await auth0.getSession()
         if (!session?.user) return null
-
         const { data } = await supabase
             .from('profiles')
             .select('organization_id')
             .eq('auth0_sub', session.user.sub)
             .single()
-
         return (data as { organization_id: string } | null)?.organization_id || null
     } catch {
         return null
     }
 }
 
-async function getProfileId(): Promise<string | null> {
-    try {
-        const session = await auth0.getSession()
-        if (!session?.user) return null
-
-        const { data } = await supabase
-            .from('profiles')
-            .select('id')
-            .eq('auth0_sub', session.user.sub)
-            .single()
-
-        return (data as { id: string } | null)?.id || null
-    } catch {
-        return null
-    }
+interface Anomaly {
+    category: string
+    period: string
+    type: 'spike' | 'drop' | 'new_category' | 'missing' | 'threshold'
+    severity: 'low' | 'medium' | 'high'
+    message: string
+    value: number
+    expectedRange?: { min: number; max: number }
+    percentChange?: number
 }
 
 /**
  * GET /api/anomalies?dealId=xxx
- * List anomalies for a deal
+ * Analyzes P&L data and detects anomalies using statistical methods.
  */
 export async function GET(request: NextRequest) {
     try {
         const organizationId = await getOrganizationId()
-        if (!organizationId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
+        if (!organizationId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
         const dealId = request.nextUrl.searchParams.get('dealId')
-        const unresolvedOnly = request.nextUrl.searchParams.get('unresolved') === 'true'
+        if (!dealId) return NextResponse.json({ error: 'Deal ID is required' }, { status: 400 })
 
-        if (!dealId) {
-            return NextResponse.json({ error: 'Deal ID is required' }, { status: 400 })
+        // Fetch the income statement data (reuse same logic or call internal)
+        // For efficiency, we do a lightweight version here
+        const [glRes, mappingRes, coaRes, clientAccountsRes] = await Promise.all([
+            supabase
+                .from('gl_transactions')
+                .select('transaction_date, amount, debit_credit, account_number')
+                .eq('deal_id', dealId),
+            supabase
+                .from('account_mappings')
+                .select('client_account_id, master_account_id')
+                .eq('deal_id', dealId),
+            supabase
+                .from('master_coa')
+                .select('id, category')
+                .eq('is_active', true),
+            supabase
+                .from('client_accounts')
+                .select('id, account_number')
+                .eq('deal_id', dealId)
+        ])
+
+        if (glRes.error || mappingRes.error || coaRes.error || clientAccountsRes.error) {
+            throw new Error('Failed to fetch data for anomaly detection')
         }
 
-        let query = supabase
-            .from('anomalies')
-            .select(`
-        *,
-        transaction:gl_transactions(id, account_name, vendor_name, amount, transaction_date),
-        resolved_user:profiles!anomalies_resolved_by_fkey(full_name)
-      `)
-            .eq('deal_id', dealId)
-            .eq('organization_id', organizationId)
-            .order('severity', { ascending: false })
-            .order('created_at', { ascending: false })
-
-        if (unresolvedOnly) {
-            query = query.eq('is_resolved', false)
-        }
-
-        const { data: anomalies, error } = await query
-
-        if (error) {
-            console.error('Error fetching anomalies:', error)
-            return NextResponse.json({ error: 'Failed to fetch anomalies' }, { status: 500 })
-        }
-
-        return NextResponse.json({
-            success: true,
-            anomalies: anomalies.map(a => ({
-                id: a.id,
-                type: a.anomaly_type,
-                severity: a.severity,
-                title: a.title,
-                description: a.description,
-                detectedValue: a.detected_value,
-                expectedValue: a.expected_value,
-                isResolved: a.is_resolved,
-                resolvedBy: (a.resolved_user as { full_name: string } | null)?.full_name || null,
-                resolvedAt: a.resolved_at,
-                resolutionNotes: a.resolution_notes,
-                createdAt: a.created_at,
-                transaction: a.transaction
-            }))
-        })
-
-    } catch (error) {
-        console.error('Anomalies list error:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-    }
-}
-
-/**
- * POST /api/anomalies
- * Create a new anomaly (manual detection)
- */
-export async function POST(request: NextRequest) {
-    try {
-        const organizationId = await getOrganizationId()
-        if (!organizationId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        const body = await request.json()
-        const {
-            dealId,
-            transactionId,
-            anomalyType,
-            severity = 5,
-            title,
-            description,
-            detectedValue,
-            expectedValue
-        } = body
-
-        if (!dealId || !title?.trim() || !anomalyType) {
-            return NextResponse.json(
-                { error: 'Deal ID, title, and anomaly type are required' },
-                { status: 400 }
-            )
-        }
-
-        const { data: anomaly, error } = await supabase
-            .from('anomalies')
-            .insert({
-                deal_id: dealId,
-                organization_id: organizationId,
-                transaction_id: transactionId || null,
-                anomaly_type: anomalyType,
-                severity,
-                title: title.trim(),
-                description: description?.trim() || null,
-                detected_value: detectedValue || null,
-                expected_value: expectedValue || null
+        // Build lookup maps
+        const accountNumToIdMap = new Map<string, string>()
+            ; (clientAccountsRes.data || []).forEach(acc => {
+                if (acc.account_number) accountNumToIdMap.set(acc.account_number.toLowerCase().trim(), acc.id)
             })
-            .select()
-            .single()
 
-        if (error) {
-            console.error('Error creating anomaly:', error)
-            return NextResponse.json({ error: 'Failed to create anomaly' }, { status: 500 })
+        const clientToMasterMap = new Map<string, string>()
+            ; (mappingRes.data || []).forEach(m => {
+                if (m.master_account_id) clientToMasterMap.set(m.client_account_id, m.master_account_id)
+            })
+
+        const masterIdToCategoryMap = new Map<string, string>()
+            ; (coaRes.data || []).forEach(coa => {
+                if (coa.category) masterIdToCategoryMap.set(coa.id, coa.category)
+            })
+
+        // Aggregate by category + month
+        const aggregated: Record<string, Record<string, number>> = {}
+            ; (glRes.data || []).forEach(tx => {
+                if (!tx.transaction_date || !tx.amount) return
+
+                const date = new Date(tx.transaction_date)
+                const month = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+
+                let category = 'Unmapped'
+                const accNum = tx.account_number?.toLowerCase().trim()
+                if (accNum) {
+                    const clientAccountId = accountNumToIdMap.get(accNum)
+                    if (clientAccountId) {
+                        const masterAccountId = clientToMasterMap.get(clientAccountId)
+                        if (masterAccountId) {
+                            category = masterIdToCategoryMap.get(masterAccountId) || 'Unmapped'
+                        }
+                    }
+                }
+
+                if (!aggregated[category]) aggregated[category] = {}
+                aggregated[category][month] = (aggregated[category][month] || 0) + tx.amount
+            })
+
+        // Detect anomalies
+        const anomalies: Anomaly[] = []
+
+        for (const [category, monthlyData] of Object.entries(aggregated)) {
+            if (category === 'Unmapped') continue // Skip unmapped
+
+            const months = Object.keys(monthlyData).sort()
+            const values = months.map(m => monthlyData[m])
+
+            if (values.length < 3) continue // Need at least 3 months for analysis
+
+            // Calculate statistics
+            const mean = values.reduce((s, v) => s + v, 0) / values.length
+            const variance = values.reduce((s, v) => s + Math.pow(v - mean, 2), 0) / values.length
+            const stdDev = Math.sqrt(variance)
+            const cv = mean !== 0 ? (stdDev / Math.abs(mean)) : 0 // Coefficient of variation
+
+            // Detection 1: Z-Score anomalies (> 2 standard deviations)
+            if (stdDev > 0) {
+                months.forEach((month, i) => {
+                    const value = values[i]
+                    const zScore = Math.abs((value - mean) / stdDev)
+
+                    if (zScore > 2) {
+                        const isSpike = value > mean
+                        anomalies.push({
+                            category,
+                            period: month,
+                            type: isSpike ? 'spike' : 'drop',
+                            severity: zScore > 3 ? 'high' : 'medium',
+                            message: `${isSpike ? 'Spike' : 'Drop'} detected: ${formatCurrencySimple(value)} vs avg ${formatCurrencySimple(mean)} (${zScore.toFixed(1)}σ)`,
+                            value,
+                            expectedRange: { min: mean - 2 * stdDev, max: mean + 2 * stdDev },
+                            percentChange: ((value - mean) / Math.abs(mean)) * 100
+                        })
+                    }
+                })
+            }
+
+            // Detection 2: Month-over-month large swings (>50% change)
+            for (let i = 1; i < months.length; i++) {
+                const prev = values[i - 1]
+                const curr = values[i]
+
+                if (Math.abs(prev) < 100) continue // Skip tiny amounts
+
+                const pctChange = ((curr - prev) / Math.abs(prev)) * 100
+
+                if (Math.abs(pctChange) > 50 && Math.abs(curr - prev) > 1000) {
+                    // Don't double-count if already caught by z-score
+                    const alreadyCaught = anomalies.some(
+                        a => a.category === category && a.period === months[i]
+                    )
+
+                    if (!alreadyCaught) {
+                        anomalies.push({
+                            category,
+                            period: months[i],
+                            type: pctChange > 0 ? 'spike' : 'drop',
+                            severity: Math.abs(pctChange) > 100 ? 'high' : 'medium',
+                            message: `${pctChange > 0 ? '+' : ''}${pctChange.toFixed(0)}% MoM change (${formatCurrencySimple(prev)} → ${formatCurrencySimple(curr)})`,
+                            value: curr,
+                            percentChange: pctChange
+                        })
+                    }
+                }
+            }
+
+            // Detection 3: Missing months (gaps in otherwise continuous data)
+            if (months.length >= 3) {
+                const allMonthsSorted = months.sort()
+                const firstMonth = allMonthsSorted[0]
+                const lastMonth = allMonthsSorted[allMonthsSorted.length - 1]
+
+                const [fy, fm] = firstMonth.split('-').map(Number)
+                const [ly, lm] = lastMonth.split('-').map(Number)
+
+                let cursor = new Date(fy, fm - 1)
+                const end = new Date(ly, lm - 1)
+
+                while (cursor <= end) {
+                    const monthKey = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`
+                    if (!monthlyData[monthKey] && monthlyData[monthKey] !== 0) {
+                        anomalies.push({
+                            category,
+                            period: monthKey,
+                            type: 'missing',
+                            severity: 'low',
+                            message: `No transactions for ${monthKey} in ${category}`,
+                            value: 0
+                        })
+                    }
+                    cursor.setMonth(cursor.getMonth() + 1)
+                }
+            }
         }
+
+        // Sort by severity (high first), then by period
+        const severityOrder: Record<string, number> = { high: 0, medium: 1, low: 2 }
+        anomalies.sort((a, b) => {
+            const sevDiff = (severityOrder[a.severity] || 2) - (severityOrder[b.severity] || 2)
+            if (sevDiff !== 0) return sevDiff
+            return a.period.localeCompare(b.period)
+        })
 
         return NextResponse.json({
             success: true,
-            anomaly: {
-                id: anomaly.id,
-                type: anomaly.anomaly_type,
-                severity: anomaly.severity,
-                title: anomaly.title,
-                createdAt: anomaly.created_at
+            anomalies,
+            summary: {
+                total: anomalies.length,
+                high: anomalies.filter(a => a.severity === 'high').length,
+                medium: anomalies.filter(a => a.severity === 'medium').length,
+                low: anomalies.filter(a => a.severity === 'low').length
             }
         })
 
-    } catch (error) {
-        console.error('Anomaly creation error:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    } catch (error: any) {
+        console.error('Anomaly detection error:', error)
+        return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 })
     }
 }
 
-/**
- * PATCH /api/anomalies
- * Update/resolve an anomaly
- */
-export async function PATCH(request: NextRequest) {
-    try {
-        const organizationId = await getOrganizationId()
-        if (!organizationId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        const body = await request.json()
-        const { id, action, resolutionNotes, ...updates } = body
-
-        if (!id) {
-            return NextResponse.json({ error: 'Anomaly ID is required' }, { status: 400 })
-        }
-
-        let updateData: Record<string, unknown> = {}
-
-        if (action === 'resolve') {
-            const profileId = await getProfileId()
-            updateData = {
-                is_resolved: true,
-                resolved_by: profileId,
-                resolved_at: new Date().toISOString(),
-                resolution_notes: resolutionNotes?.trim() || null
-            }
-        } else if (action === 'unresolve') {
-            updateData = {
-                is_resolved: false,
-                resolved_by: null,
-                resolved_at: null,
-                resolution_notes: null
-            }
-        } else {
-            // Generic update
-            if (updates.severity) updateData.severity = updates.severity
-            if (updates.title) updateData.title = updates.title.trim()
-            if (updates.description !== undefined) updateData.description = updates.description?.trim() || null
-        }
-
-        const { data: anomaly, error } = await supabase
-            .from('anomalies')
-            .update(updateData)
-            .eq('id', id)
-            .eq('organization_id', organizationId)
-            .select()
-            .single()
-
-        if (error) {
-            console.error('Error updating anomaly:', error)
-            return NextResponse.json({ error: 'Failed to update anomaly' }, { status: 500 })
-        }
-
-        return NextResponse.json({
-            success: true,
-            anomaly: {
-                id: anomaly.id,
-                isResolved: anomaly.is_resolved,
-                resolvedAt: anomaly.resolved_at,
-                resolutionNotes: anomaly.resolution_notes
-            }
-        })
-
-    } catch (error) {
-        console.error('Anomaly update error:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-    }
-}
-
-/**
- * DELETE /api/anomalies?id=xxx
- * Delete an anomaly
- */
-export async function DELETE(request: NextRequest) {
-    try {
-        const organizationId = await getOrganizationId()
-        if (!organizationId) {
-            return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-        }
-
-        const anomalyId = request.nextUrl.searchParams.get('id')
-        if (!anomalyId) {
-            return NextResponse.json({ error: 'Anomaly ID is required' }, { status: 400 })
-        }
-
-        const { error } = await supabase
-            .from('anomalies')
-            .delete()
-            .eq('id', anomalyId)
-            .eq('organization_id', organizationId)
-
-        if (error) {
-            console.error('Error deleting anomaly:', error)
-            return NextResponse.json({ error: 'Failed to delete anomaly' }, { status: 500 })
-        }
-
-        return NextResponse.json({ success: true })
-
-    } catch (error) {
-        console.error('Anomaly deletion error:', error)
-        return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
-    }
+function formatCurrencySimple(amount: number): string {
+    return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: 'USD',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(amount)
 }

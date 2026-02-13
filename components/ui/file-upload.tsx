@@ -217,7 +217,7 @@ export function FileUpload({ token, itemId, onUploadComplete, maxFiles = 5 }: Fi
                                     {formatFileSize(file.size)}
                                 </div>
                             </div>
-                            <CheckCircle className="w-4 h-4 text-green-600 flex-shrink-0" />
+                            <CheckCircle className="w-4 h-4 text-green-600 shrink-0" />
                             <Button
                                 variant="ghost"
                                 size="icon"

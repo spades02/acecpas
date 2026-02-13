@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useUser } from '@auth0/nextjs-auth0/client'
-import { ChevronDown, ClipboardMinus, Folder, FolderArchive, FolderOpenDot, Handshake, HelpCircle, Home, LogOut, Settings, User } from "lucide-react"
+import { BarChart3, ChevronDown, ClipboardMinus, Folder, FolderArchive, FolderOpenDot, Handshake, HelpCircle, Home, Landmark, Layers, LogOut, Scale, Settings, Sheet, ShieldCheck, User, TableProperties } from "lucide-react"
 
 import {
   Sidebar,
@@ -33,6 +33,11 @@ const mainItems = [
     title: "Reports",
     url: "/reports",
     icon: ClipboardMinus,
+  },
+  {
+    title: "Consolidation",
+    url: "/consolidation",
+    icon: Layers,
   },
   {
     title: "Settings",
@@ -195,10 +200,58 @@ export default function AppSidebar() {
                   </SidebarMenuButton>
                 </SidebarMenuItem>
                 <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/income-statement')}>
+                    <Link href={`/deals/${currentDealId}/income-statement`}>
+                      <TableProperties className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Income Statement</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/balance-sheet')}>
+                    <Link href={`/deals/${currentDealId}/balance-sheet`}>
+                      <Sheet className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Balance Sheet</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/adjustments')}>
+                    <Link href={`/deals/${currentDealId}/adjustments`}>
+                      <Scale className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Adjustments</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/ebitda')}>
+                    <Link href={`/deals/${currentDealId}/ebitda`}>
+                      <BarChart3 className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">EBITDA Bridge</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/bank-reconciliation')}>
+                    <Link href={`/deals/${currentDealId}/bank-reconciliation`}>
+                      <Landmark className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Bank Recon</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname?.endsWith('/open-items')}>
                     <Link href={`/deals/${currentDealId}/open-items`}>
                       <HelpCircle className="w-4 h-4 mr-2" />
                       <span className="text-xs font-medium">Open Items</span>
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild isActive={pathname?.endsWith('/validation')}>
+                    <Link href={`/deals/${currentDealId}/validation`}>
+                      <ShieldCheck className="w-4 h-4 mr-2" />
+                      <span className="text-xs font-medium">Validation</span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

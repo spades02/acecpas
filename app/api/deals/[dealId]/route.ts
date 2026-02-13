@@ -53,9 +53,9 @@ export async function GET(req: NextRequest, { params }: RouteParams) {
         *,
         assigned_user:profiles!deals_assigned_to_fkey(id, full_name, email, avatar_url),
         created_user:profiles!deals_created_by_fkey(id, full_name, email),
-        files(id, filename, file_type, status, created_at),
-        anomalies(id, title, severity, is_resolved),
-        open_items(id, question, status, is_resolved)
+        uploaded_files(id, original_filename, file_type, status, created_at),
+        anomalies(id, anomaly_type, severity, ai_summary),
+        open_items(id, question, status)
       `)
             .eq('id', dealId)
             .eq('organization_id', profile.organization_id)
